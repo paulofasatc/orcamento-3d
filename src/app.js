@@ -5,6 +5,7 @@ import {
   getMaterial,
   calculateQuote,
 } from "./quote.js";
+import { parseSliceBuffer, resolveSliceMass } from "./slice.js";
 import { StlPreview } from "./preview.js";
 
 const STORAGE_KEY = "orca3d:settings";
@@ -45,6 +46,11 @@ const els = {
   preview: document.getElementById("preview"),
   previewEmpty: document.getElementById("preview-empty"),
   error: document.getElementById("error"),
+  sliceInfo: document.getElementById("slice-info"),
+  sliceSummary: document.getElementById("slice-summary"),
+  sliceWarnings: document.getElementById("slice-warnings"),
+  sliceClear: document.getElementById("slice-clear"),
+  usageSource: document.getElementById("usage-source"),
   material: document.getElementById("material"),
   density: document.getElementById("densityGCm3"),
   reset: document.getElementById("reset-settings"),
@@ -53,6 +59,9 @@ const els = {
 };
 
 let geometry = null;
+let stlLabel = "";
+let sliceRaw = null;
+let sliceLabel = "";
 let preview = null;
 
 function loadSettings() {
@@ -145,8 +154,68 @@ function setText(id, value) {
   if (el) el.textContent = value;
 }
 
+function currentSliceView() {
+  if (!sliceRaw) return null;
+  const settings = readFormSettings();
+  const resolved = resolveSliceMass(sliceRaw, { densityGCm3: settings.densityGCm3 });
+  return {
+    ...sliceRaw,
+    massGrams: resolved.massGrams,
+    massSource: resolved.massSource,
+    warnings: [...(sliceRaw.baseWarnings || []), ...resolved.warnings],
+    usedDensityGCm3: resolved.usedDensityGCm3,
+    usedDiameterMm: resolved.usedDiameterMm,
+  };
+}
+
+function measuredFromSlice(view) {
+  if (!view) return null;
+  const measured = {};
+  if (view.massGrams != null) {
+    measured.massGrams = view.massGrams;
+    measured.massSource = "slicer";
+  }
+  if (view.printTimeSeconds != null) {
+    measured.printTimeSeconds = view.printTimeSeconds;
+    measured.timeSource = "slicer";
+  }
+  return Object.keys(measured).length ? measured : null;
+}
+
+function renderSliceBanner(view) {
+  if (!view) {
+    els.sliceInfo.hidden = true;
+    els.sliceSummary.textContent = "";
+    els.sliceWarnings.hidden = true;
+    return;
+  }
+  const version = view.slicer?.version ? ` ${view.slicer.version}` : "";
+  const plates = view.plateCount > 1 ? ` · ${view.plateCount} placas` : "";
+  const mass =
+    view.massGrams != null ? `${numberFmt.format(view.massGrams)} g` : "peso não encontrado";
+  const time = view.printTimeSeconds != null ? formatTime(view.printTimeSeconds) : "tempo não encontrado";
+  let how = "";
+  if (view.massSource === "length") {
+    how = ` Peso convertido do comprimento (${numberFmt.format(view.usedDiameterMm)} mm, ${numberFmt.format(view.usedDensityGCm3)} g/cm³).`;
+  } else if (view.massSource === "volume") {
+    how = ` Peso convertido do volume (${numberFmt.format(view.usedDensityGCm3)} g/cm³).`;
+  }
+  const replaces =
+    view.massGrams != null && view.printTimeSeconds != null
+      ? "Eles substituem a estimativa do STL."
+      : "O que foi encontrado substitui a estimativa correspondente.";
+  els.sliceInfo.hidden = false;
+  els.sliceSummary.textContent = `${view.slicer?.name || "Fatiador"}${version}${plates}: ${mass} · ${time}.${how} ${replaces}`;
+  const warnings = (view.warnings || []).filter(Boolean);
+  els.sliceWarnings.hidden = warnings.length === 0;
+  els.sliceWarnings.textContent = warnings.join(" ");
+}
+
 function renderEmpty() {
   document.getElementById("results").classList.add("is-empty");
+  setText("mass-label", "Peso estimado");
+  setText("time-label", "Tempo estimado");
+  els.usageSource.hidden = true;
   setText("stat-volume", "—");
   setText("stat-size", "—");
   setText("stat-area", "—");
@@ -162,28 +231,53 @@ function renderEmpty() {
   setText("price-suggested", "—");
   setText("price-listing", "—");
   setText("price-net", "—");
-  setText("out-material-detail", "Envie um STL para ver o orçamento.");
+  setText("out-material-detail", "Envie um STL ou um arquivo fatiado para ver o orçamento.");
 }
 
 function render() {
-  if (!geometry) {
+  const settings = readFormSettings();
+  saveSettings(settings);
+  const sliceView = currentSliceView();
+  renderSliceBanner(sliceView);
+  const measured = measuredFromSlice(sliceView);
+
+  if (!geometry && !measured) {
     renderEmpty();
     return;
   }
 
-  const settings = readFormSettings();
-  saveSettings(settings);
-  const quote = calculateQuote(geometry, settings);
-  const box = geometry.boundingBox.size;
+  const quote = calculateQuote(geometry, settings, measured);
+  const box = geometry?.boundingBox?.size;
 
   document.getElementById("results").classList.remove("is-empty");
-  setText("stat-volume", `${numberFmt.format(geometry.volumeMm3)} mm³`);
-  setText(
-    "stat-size",
-    `${numberFmt1.format(box.x)} × ${numberFmt1.format(box.y)} × ${numberFmt1.format(box.z)} mm`
-  );
-  setText("stat-area", `${numberFmt.format(geometry.surfaceAreaMm2)} mm²`);
-  setText("stat-triangles", numberFmt0.format(geometry.triangleCount));
+  if (geometry && box) {
+    setText("stat-volume", `${numberFmt.format(geometry.volumeMm3)} mm³`);
+    setText(
+      "stat-size",
+      `${numberFmt1.format(box.x)} × ${numberFmt1.format(box.y)} × ${numberFmt1.format(box.z)} mm`
+    );
+    setText("stat-area", `${numberFmt.format(geometry.surfaceAreaMm2)} mm²`);
+    setText("stat-triangles", numberFmt0.format(geometry.triangleCount));
+  } else {
+    setText("stat-volume", "—");
+    setText("stat-size", "—");
+    setText("stat-area", "—");
+    setText("stat-triangles", "—");
+  }
+
+  setText("mass-label", quote.massSource === "slicer" ? "Peso do fatiador" : "Peso estimado");
+  setText("time-label", quote.timeSource === "slicer" ? "Tempo do fatiador" : "Tempo estimado");
+  let usage = "";
+  const slicerName = sliceView?.slicer?.name || "o fatiador";
+  if (quote.massSource === "slicer" && quote.timeSource === "slicer") {
+    usage = `Peso e tempo lidos de ${slicerName}.`;
+  } else if (quote.massSource === "slicer") {
+    usage = `Peso lido de ${slicerName}. O tempo ainda é a estimativa.`;
+  } else if (quote.timeSource === "slicer") {
+    usage = `Tempo lido de ${slicerName}. O peso ainda é a estimativa.`;
+  }
+  els.usageSource.hidden = !usage;
+  els.usageSource.textContent = usage;
 
   setText("out-mass", `${numberFmt.format(quote.massGrams)} g`);
   setText("out-time", formatTime(quote.printTimeSeconds));
@@ -198,10 +292,19 @@ function render() {
   setText("price-net", moneyFmt.format(quote.netAfterFee));
 
   const mat = quote.material;
-  setText(
-    "out-material-detail",
-    `Casca ${numberFmt.format(mat.shellVolumeMm3)} mm³ · preenchimento ${numberFmt.format(mat.infillVolumeMm3)} mm³ · total ${numberFmt.format(mat.materialVolumeMm3)} mm³ de filamento (estimativa).`
-  );
+  if (quote.massSource === "estimate" && geometry) {
+    setText(
+      "out-material-detail",
+      `Casca ${numberFmt.format(mat.shellVolumeMm3)} mm³ · preenchimento ${numberFmt.format(mat.infillVolumeMm3)} mm³ · total ${numberFmt.format(mat.materialVolumeMm3)} mm³ de filamento (estimativa).`
+    );
+  } else if (!geometry) {
+    setText("out-material-detail", "Sem STL: o orçamento usa só o peso e o tempo do fatiador.");
+  } else {
+    setText(
+      "out-material-detail",
+      `A estimativa do STL seria ${numberFmt.format(quote.estimatedMassGrams)} g e ${formatTime(quote.estimatedPrintTimeSeconds)}. O cálculo usa o arquivo fatiado.`
+    );
+  }
 
   const fee = settings.marketplaceFeePercent;
   setText(
@@ -212,19 +315,39 @@ function render() {
   );
 }
 
-async function loadFile(file) {
+function refreshFileLabel() {
+  const parts = [stlLabel, sliceLabel].filter(Boolean);
+  els.fileName.textContent = parts.join(" · ") || "Nenhum arquivo selecionado";
+}
+
+async function loadSliceFile(file) {
   showError("");
-  if (!file) return;
+  const name = file.name || "fatiado.gcode";
+  try {
+    const buffer = await file.arrayBuffer();
+    const settings = readFormSettings();
+    sliceRaw = parseSliceBuffer(buffer, name, { densityGCm3: settings.densityGCm3 });
+    sliceLabel = `${name} · ${formatFileSize(file.size)}`;
+    refreshFileLabel();
+    render();
+  } catch (err) {
+    showError(err?.message || "Não foi possível ler este arquivo fatiado.");
+  }
+}
+
+async function loadStlFile(file) {
+  showError("");
   const name = file.name || "modelo.stl";
   if (!/\.stl$/i.test(name) && file.type && !/stl|model/i.test(file.type)) {
-    showError("Envie um arquivo no formato STL (.stl).");
+    showError("Envie um STL (.stl), um G-code (.gcode) ou um 3MF fatiado (.3mf).");
     return;
   }
 
   try {
     const buffer = await file.arrayBuffer();
     geometry = parseStl(buffer, name);
-    els.fileName.textContent = `${name} · ${formatFileSize(file.size)} · ${geometry.format === "binary" ? "binário" : "ASCII"}`;
+    stlLabel = `${name} · ${formatFileSize(file.size)} · ${geometry.format === "binary" ? "binário" : "ASCII"}`;
+    refreshFileLabel();
     els.previewEmpty.hidden = true;
     if (!preview) {
       preview = new StlPreview(els.preview);
@@ -233,12 +356,23 @@ async function loadFile(file) {
     render();
   } catch (err) {
     geometry = null;
-    els.fileName.textContent = "";
+    stlLabel = "";
+    refreshFileLabel();
     els.previewEmpty.hidden = false;
     preview?.clear();
-    renderEmpty();
+    render();
     showError(err?.message || "Não foi possível ler este STL.");
   }
+}
+
+async function loadFile(file) {
+  if (!file) return;
+  const name = file.name || "";
+  if (/\.(gcode|3mf)$/i.test(name)) {
+    await loadSliceFile(file);
+    return;
+  }
+  await loadStlFile(file);
 }
 
 function formatFileSize(bytes) {
@@ -267,8 +401,8 @@ function initDropzone() {
     });
   });
   zone.addEventListener("drop", (e) => {
-    const file = e.dataTransfer?.files?.[0];
-    if (file) loadFile(file);
+    const files = [...(e.dataTransfer?.files || [])];
+    for (const file of files) loadFile(file);
   });
   zone.addEventListener("click", (e) => {
     if (e.target.closest("button, input, label")) return;
@@ -281,8 +415,9 @@ function initDropzone() {
     }
   });
   els.file.addEventListener("change", () => {
-    const file = els.file.files?.[0];
-    if (file) loadFile(file);
+    const files = [...(els.file.files || [])];
+    for (const file of files) loadFile(file);
+    els.file.value = "";
   });
 }
 
@@ -313,6 +448,13 @@ function init() {
     els.advanced.hidden = !open;
     els.advancedToggle.setAttribute("aria-expanded", String(open));
     els.advancedToggle.textContent = open ? "Ocultar ajustes avançados" : "Ajustes avançados";
+  });
+
+  els.sliceClear.addEventListener("click", () => {
+    sliceRaw = null;
+    sliceLabel = "";
+    refreshFileLabel();
+    render();
   });
 
   initDropzone();

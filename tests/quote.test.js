@@ -139,6 +139,33 @@ assert(almostEqual(quote.netAfterFee, suggested, 1e-8), "líquido após taxa = p
 
 const noFee = calculateQuote(asciiGeom, { ...DEFAULT_SETTINGS, marketplaceFeePercent: 0 });
 assert(almostEqual(noFee.listingPrice, noFee.suggestedPrice, 1e-8), "sem taxa, anúncio = preço sugerido");
+assert(quote.massSource === "estimate" && quote.timeSource === "estimate", "sem medição, a origem é a estimativa");
+
+console.log("\nPeso e tempo informados substituem a estimativa");
+const measured = calculateQuote(asciiGeom, DEFAULT_SETTINGS, {
+  massGrams: 10,
+  printTimeSeconds: 3600,
+  massSource: "slicer",
+  timeSource: "slicer",
+});
+const measuredFilament = (10 / 1000) * 99;
+const measuredEnergy = 1 * (150 / 1000) * 0.95;
+const measuredMachine = 1 * 3;
+assert(almostEqual(measured.massGrams, 10), "massa medida = 10 g");
+assert(almostEqual(measured.printTimeSeconds, 3600), "tempo medido = 1 h");
+assert(measured.massSource === "slicer" && measured.timeSource === "slicer", "origem marcada como fatiador");
+assert(almostEqual(measured.costs.filament, measuredFilament, 1e-8), "filamento usa a massa medida");
+assert(almostEqual(measured.costs.energy, measuredEnergy, 1e-8), "energia usa o tempo medido");
+assert(almostEqual(measured.costs.machine, measuredMachine, 1e-8), "máquina usa o tempo medido");
+assert(almostEqual(measured.estimatedMassGrams, mass, 1e-6), "a estimativa original continua disponível");
+
+const onlyMass = calculateQuote(asciiGeom, DEFAULT_SETTINGS, { massGrams: 10 });
+assert(almostEqual(onlyMass.massGrams, 10), "só a massa é substituída");
+assert(almostEqual(onlyMass.printTimeSeconds, timeS, 1e-6), "o tempo segue a estimativa");
+
+const manualOnly = calculateQuote(null, DEFAULT_SETTINGS, { massGrams: 4, printTimeSeconds: 600 });
+assert(almostEqual(manualOnly.massGrams, 4) && almostEqual(manualOnly.printTimeSeconds, 600), "orçamento sem STL, só com valores informados");
+assert(manualOnly.costTotal > 0, "custo sem STL é positivo");
 
 console.log("\nSTL inválido");
 let threw = false;

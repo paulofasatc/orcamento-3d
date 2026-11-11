@@ -148,20 +148,41 @@ export function estimatePrintTimeSeconds(materialVolumeMm3, settings) {
 }
 
 /**
+ * Número explícito, inclusive 0. null/undefined/NaN significam "não informado".
+ * @param {unknown} value
+ * @returns {number|null}
+ */
+export function explicitNumber(value) {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
  * Calcula o orçamento completo a partir da geometria e dos parâmetros.
+ * `measured.massGrams` e `measured.printTimeSeconds`, quando forem números,
+ * substituem a estimativa (peso e tempo lidos do fatiador ou digitados).
  *
  * Taxa de marketplace: o preço de anúncio é reajustado para que, depois da
- * comissão, o valor líquido seja o preço sugerido (lucro incluído).
+ * comissão percentual, o valor líquido seja o preço sugerido (lucro incluído).
  * listingPrice = suggestedPrice / (1 - fee/100)
+ * Tabelas com taxa fixa ficam em src/fees.js.
  *
- * @param {QuoteGeometry} geometry
+ * @param {QuoteGeometry|null|undefined} geometry
  * @param {QuoteSettings} settings
+ * @param {{massGrams?: number|null, printTimeSeconds?: number|null, massSource?: string, timeSource?: string}} [measured]
  */
-export function calculateQuote(geometry, settings) {
+export function calculateQuote(geometry, settings, measured) {
   const s = { ...DEFAULT_SETTINGS, ...settings };
-  const material = estimateMaterialVolume(geometry, s);
-  const massGrams = massGramsFromVolume(material.materialVolumeMm3, s.densityGCm3);
-  const printTimeSeconds = estimatePrintTimeSeconds(material.materialVolumeMm3, s);
+  const geom = geometry && typeof geometry === "object" ? geometry : { volumeMm3: 0, surfaceAreaMm2: 0 };
+  const material = estimateMaterialVolume(geom, s);
+  const estimatedMassGrams = massGramsFromVolume(material.materialVolumeMm3, s.densityGCm3);
+  const estimatedPrintTimeSeconds = estimatePrintTimeSeconds(material.materialVolumeMm3, s);
+  const measuredMass = explicitNumber(measured?.massGrams);
+  const measuredTime = explicitNumber(measured?.printTimeSeconds);
+  const hasGeometry = !!(geometry && typeof geometry === "object");
+  const massGrams = measuredMass != null ? Math.max(0, measuredMass) : estimatedMassGrams;
+  const printTimeSeconds = measuredTime != null ? Math.max(0, measuredTime) : estimatedPrintTimeSeconds;
   const printTimeHours = printTimeSeconds / 3600;
 
   const filamentCost = (massGrams / 1000) * Math.max(0, Number(s.filamentPricePerKg) || 0);
@@ -188,6 +209,10 @@ export function calculateQuote(geometry, settings) {
     massGrams,
     printTimeSeconds,
     printTimeHours,
+    massSource: measuredMass != null ? measured?.massSource || "measured" : hasGeometry ? "estimate" : "none",
+    timeSource: measuredTime != null ? measured?.timeSource || "measured" : hasGeometry ? "estimate" : "none",
+    estimatedMassGrams,
+    estimatedPrintTimeSeconds,
     costs: {
       filament: filamentCost,
       energy: energyCost,

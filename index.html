@@ -50,7 +50,7 @@
               id="dropzone"
               role="button"
               tabindex="0"
-              aria-label="Enviar arquivo STL"
+              aria-label="Enviar STL, G-code ou 3MF fatiado"
             >
               <div class="preview-stage">
                 <div id="preview"></div>
@@ -60,18 +60,23 @@
                       <path d="M12 3 4.5 7.5v9L12 21l7.5-4.5v-9L12 3Z" />
                       <path d="M12 12 4.5 7.5M12 12v9M12 12l7.5-4.5" />
                     </svg>
-                    <strong>Envie um arquivo STL</strong>
-                    <span>Arraste o modelo para cá ou clique para escolher. O arquivo fica só no seu navegador — nada é enviado a um servidor.</span>
+                    <strong>Envie o STL, o G-code ou o 3MF fatiado</strong>
+                    <span>O STL mostra a peça e estima peso e tempo. O G-code ou o .gcode.3mf do Orca, Bambu, Prusa ou Cura traz o peso e o tempo reais do fatiador. Tudo fica no seu navegador.</span>
                   </div>
                 </div>
               </div>
               <div class="file-bar">
                 <span id="file-name">Nenhum arquivo selecionado</span>
                 <label class="btn">
-                  Escolher STL
-                  <input id="file-input" type="file" accept=".stl,model/stl" hidden />
+                  Escolher arquivo
+                  <input id="file-input" type="file" accept=".stl,.gcode,.3mf,model/stl" multiple hidden />
                 </label>
               </div>
+            </div>
+            <div id="slice-info" class="slice-info" hidden>
+              <p id="slice-summary"></p>
+              <p id="slice-warnings" class="slice-warnings" hidden></p>
+              <button type="button" id="slice-clear" class="btn ghost">Descartar dados do fatiador</button>
             </div>
             <p id="error" hidden></p>
             <div class="stats">
@@ -182,14 +187,15 @@
           <p class="estimate-note">Peso e tempo são estimativas. Ajuste os parâmetros até chegar perto da sua impressora.</p>
           <div class="hero-metrics">
             <div class="hero-metric">
-              <span class="eyebrow">Peso estimado</span>
+              <span class="eyebrow" id="mass-label">Peso estimado</span>
               <strong id="out-mass">—</strong>
             </div>
             <div class="hero-metric">
-              <span class="eyebrow">Tempo estimado</span>
+              <span class="eyebrow" id="time-label">Tempo estimado</span>
               <strong id="out-time">—</strong>
             </div>
           </div>
+          <p class="usage-source" id="usage-source" hidden></p>
           <p class="material-detail" id="out-material-detail">Envie um STL para ver o orçamento.</p>
           <div class="cost-list">
             <div class="cost-row"><span>Filamento</span><b id="cost-filament">—</b></div>
