@@ -9,6 +9,13 @@ import {
   manualTimeSeconds,
 } from "./quote.js";
 import { parseSliceBuffer, resolveSliceMass } from "./slice.js";
+import {
+  FEE_DEFAULTS,
+  bandsForSelection,
+  getMarketplace,
+  selectionFromSettings,
+  solveListingPrice,
+} from "./fees.js";
 import { StlPreview } from "./preview.js";
 
 const STORAGE_KEY = "orca3d:settings";
@@ -62,10 +69,28 @@ const els = {
   material: document.getElementById("material"),
   density: document.getElementById("densityGCm3"),
   reset: document.getElementById("reset-settings"),
+  feeMode: document.getElementById("fee-mode"),
+  feeCustom: document.getElementById("fee-custom"),
+  feeMl: document.getElementById("fee-ml"),
+  feeShopee: document.getElementById("fee-shopee"),
+  feeSource: document.getElementById("fee-source"),
+  feeBands: document.getElementById("fee-bands"),
+  feeNotes: document.getElementById("fee-notes"),
+  feeNotesList: document.getElementById("fee-notes-list"),
+  feeWarning: document.getElementById("fee-warning"),
+  feeBreakdown: document.getElementById("fee-breakdown"),
+  mlListingType: document.getElementById("ml-listing-type"),
+  mlLogistics: document.getElementById("ml-logistics"),
+  mlPercent: document.getElementById("ml-percent"),
+  mlFixed: document.getElementById("ml-fixed"),
+  shopeeProgram: document.getElementById("shopee-program"),
+  shopeeFull: document.getElementById("shopee-full"),
   advancedToggle: document.getElementById("advanced-toggle"),
   advanced: document.getElementById("advanced"),
 };
 
+let feeCatalog = null;
+let feeCatalogError = "";
 let geometry = null;
 let stlLabel = "";
 let sliceRaw = null;
@@ -75,11 +100,11 @@ let preview = null;
 function loadSettings() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { ...DEFAULT_SETTINGS };
+    if (!raw) return { ...DEFAULT_SETTINGS, ...FEE_DEFAULTS };
     const saved = JSON.parse(raw);
-    return { ...DEFAULT_SETTINGS, ...saved };
+    return { ...DEFAULT_SETTINGS, ...FEE_DEFAULTS, ...saved };
   } catch {
-    return { ...DEFAULT_SETTINGS };
+    return { ...DEFAULT_SETTINGS, ...FEE_DEFAULTS };
   }
 }
 
@@ -111,6 +136,13 @@ function readFormSettings() {
     // keep density from form if present
     if (!data.get("densityGCm3")) settings.densityGCm3 = mat.densityGCm3;
   }
+  settings.feeMode = els.feeMode.value || "custom";
+  settings.mlListingType = els.mlListingType.value || "classico";
+  settings.mlLogistics = els.mlLogistics.value || "me2";
+  settings.mlPercent = els.mlPercent.value;
+  settings.mlFixedOverride = els.mlFixed.value;
+  settings.shopeeProgram = els.shopeeProgram.value || "cnpj";
+  settings.shopeeFull = els.shopeeFull.value || "none";
   return settings;
 }
 
@@ -120,6 +152,14 @@ function fillForm(settings) {
     if (!input) continue;
     input.value = settings[key];
   }
+  els.feeMode.value = settings.feeMode || "custom";
+  els.mlListingType.value = settings.mlListingType || "classico";
+  els.mlLogistics.value = settings.mlLogistics || "me2";
+  els.mlPercent.value = settings.mlPercent ?? "";
+  els.mlFixed.value = settings.mlFixedOverride ?? "";
+  els.shopeeProgram.value = settings.shopeeProgram || "cnpj";
+  els.shopeeFull.value = settings.shopeeFull || "none";
+  syncFeePanels();
 }
 
 function populateMaterials(selected) {
@@ -253,6 +293,7 @@ function renderEmpty() {
   setText("mass-label", "Peso estimado");
   setText("time-label", "Tempo estimado");
   els.usageSource.hidden = true;
+  if (els.feeBreakdown) els.feeBreakdown.hidden = true;
   setText("stat-volume", "—");
   setText("stat-size", "—");
   setText("stat-area", "—");
@@ -274,16 +315,23 @@ function renderEmpty() {
 function render() {
   const settings = readFormSettings();
   saveSettings(settings);
+  syncFeePanels();
   const sliceView = currentSliceView();
   renderSliceBanner(sliceView);
   const measured = combineUsageSources(readManual(), measuredFromSlice(sliceView));
 
   if (!geometry && !measured) {
     renderEmpty();
+    paintFeePanel(settings, null);
     return;
   }
 
-  const quote = calculateQuote(geometry, settings, measured);
+  const quoteSettings =
+    settings.feeMode && settings.feeMode !== "custom"
+      ? { ...settings, marketplaceFeePercent: 0 }
+      : settings;
+  const quote = calculateQuote(geometry, quoteSettings, measured);
+  const feeResult = priceWithFeeTable(quote.suggestedPrice, settings);
   const box = geometry?.boundingBox?.size;
 
   document.getElementById("results").classList.remove("is-empty");
@@ -318,8 +366,16 @@ function render() {
   setText("cost-failure", moneyFmt.format(quote.costs.failure));
   setText("cost-total", moneyFmt.format(quote.costTotal));
   setText("price-suggested", moneyFmt.format(quote.suggestedPrice));
-  setText("price-listing", moneyFmt.format(quote.listingPrice));
-  setText("price-net", moneyFmt.format(quote.netAfterFee));
+  if (feeResult?.ok) {
+    setText("price-listing", moneyFmt.format(feeResult.listingPrice));
+    setText("price-net", moneyFmt.format(feeResult.net));
+  } else if (feeResult && !feeResult.ok) {
+    setText("price-listing", "—");
+    setText("price-net", "—");
+  } else {
+    setText("price-listing", moneyFmt.format(quote.listingPrice));
+    setText("price-net", moneyFmt.format(quote.netAfterFee));
+  }
 
   const mat = quote.material;
   if (!geometry) {
@@ -339,12 +395,111 @@ function render() {
   }
 
   const fee = settings.marketplaceFeePercent;
-  setText(
-    "listing-label",
-    fee > 0
-      ? `Preço de anúncio (taxa de ${numberFmt.format(fee)}%)`
-      : "Preço de anúncio (sem taxa)"
-  );
+  if (feeResult?.ok) {
+    setText("listing-label", `Preço de anúncio (${feeResult.marketplaceName})`);
+    els.feeBreakdown.hidden = false;
+    els.feeBreakdown.textContent = `Comissão ${moneyFmt.format(feeResult.percentFee)} (${numberFmt.format(feeResult.percent)}%) + fixo ${moneyFmt.format(feeResult.fixedFee)}. ${feeResult.bandLabel}.`;
+  } else if (settings.feeMode === "none") {
+    setText("listing-label", "Preço de anúncio (sem taxa)");
+    els.feeBreakdown.hidden = true;
+  } else if (feeResult && !feeResult.ok) {
+    setText("listing-label", "Preço de anúncio");
+    els.feeBreakdown.hidden = true;
+  } else {
+    setText(
+      "listing-label",
+      fee > 0 ? `Preço de anúncio (taxa de ${numberFmt.format(fee)}%)` : "Preço de anúncio (sem taxa)"
+    );
+    els.feeBreakdown.hidden = true;
+  }
+  paintFeePanel(settings, feeResult);
+}
+
+function syncFeePanels() {
+  const mode = els.feeMode.value || "custom";
+  els.feeCustom.hidden = mode !== "custom";
+  els.feeMl.hidden = mode !== "mercado-livre";
+  els.feeShopee.hidden = mode !== "shopee";
+}
+
+function priceWithFeeTable(target, settings) {
+  const selection = selectionFromSettings(settings);
+  if (!selection) return null;
+  if (!feeCatalog) {
+    return {
+      ok: false,
+      marketplaceName: "",
+      message: feeCatalogError || "A tabela de taxas ainda não carregou.",
+      warnings: [],
+    };
+  }
+  return solveListingPrice(target, selection, feeCatalog);
+}
+
+function formatIsoDate(iso) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ""));
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : "";
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function paintFeePanel(settings, solved) {
+  const mode = settings.feeMode || "custom";
+  const wantsTable = mode === "mercado-livre" || mode === "shopee";
+  if (wantsTable && !feeCatalog) {
+    els.feeBands.innerHTML = "";
+    els.feeNotes.hidden = true;
+    els.feeSource.textContent = feeCatalogError || "A tabela de taxas ainda não carregou.";
+    els.feeWarning.hidden = false;
+    els.feeWarning.textContent = els.feeSource.textContent;
+    return;
+  }
+  const market = wantsTable ? getMarketplace(feeCatalog, mode) : null;
+  if (!market) {
+    els.feeBands.innerHTML = "";
+    els.feeNotes.hidden = true;
+    els.feeNotesList.innerHTML = "";
+    els.feeWarning.hidden = true;
+    els.feeSource.textContent =
+      mode === "none"
+        ? "Sem comissão de marketplace. O preço de anúncio fica igual ao preço sugerido."
+        : "Percentual único, para quando você já sabe a taxa da sua conta.";
+    return;
+  }
+  if (!feeCatalog) {
+    els.feeSource.textContent = feeCatalogError || "Não foi possível carregar a tabela de taxas.";
+    els.feeBands.innerHTML = "";
+    els.feeWarning.hidden = false;
+    els.feeWarning.textContent = els.feeSource.textContent;
+    return;
+  }
+  const consulted = formatIsoDate(feeCatalog.consultedAt);
+  const links = [`<a href="${market.sourceUrl}" target="_blank" rel="noopener noreferrer">${escapeHtml(market.name)}</a>`];
+  if (market.secondarySourceUrl) {
+    links.push(
+      `<a href="${market.secondarySourceUrl}" target="_blank" rel="noopener noreferrer">fonte complementar</a>`
+    );
+  }
+  els.feeSource.innerHTML = `Fonte: ${links.join(" · ")}. ${escapeHtml(market.updatedAtLabel || "")}${consulted ? ` Consultado em ${consulted}.` : ""}`;
+  const bands = bandsForSelection(market, selectionFromSettings(settings));
+  els.feeBands.innerHTML = bands
+    .map((band) => `<li>${escapeHtml(band.label)}${band.confirmed === false ? " — valor não confirmado" : ""}</li>`)
+    .join("");
+  els.feeNotes.hidden = !(market.notes || []).length;
+  els.feeNotesList.innerHTML = (market.notes || []).map((note) => `<li>${escapeHtml(note)}</li>`).join("");
+  const warnings = [];
+  if (solved && !solved.ok && solved.message) warnings.push(solved.message);
+  if (solved?.warnings?.length) warnings.push(...solved.warnings);
+  if (!solved?.ok && solved?.confirmed === false) {
+    // já coberto pela mensagem
+  }
+  els.feeWarning.hidden = warnings.length === 0;
+  els.feeWarning.textContent = warnings.join(" ");
 }
 
 function describeUsage(quote, sliceView) {
@@ -464,7 +619,19 @@ function initDropzone() {
   });
 }
 
-function init() {
+async function loadFeeCatalog() {
+  try {
+    const response = await fetch(new URL("../data/fees.json", import.meta.url));
+    if (!response.ok) throw new Error("falha");
+    feeCatalog = await response.json();
+    feeCatalogError = "";
+  } catch {
+    feeCatalog = null;
+    feeCatalogError = "Não foi possível carregar a tabela de taxas. Use o percentual único por enquanto.";
+  }
+}
+
+async function init() {
   const settings = loadSettings();
   populateMaterials(settings.material);
   fillForm(settings);
@@ -479,10 +646,11 @@ function init() {
   els.form.addEventListener("change", () => render());
 
   els.reset.addEventListener("click", () => {
-    fillForm(DEFAULT_SETTINGS);
+    const defaults = { ...DEFAULT_SETTINGS, ...FEE_DEFAULTS };
+    fillForm(defaults);
     populateMaterials(DEFAULT_SETTINGS.material);
     els.density.value = String(DEFAULT_SETTINGS.densityGCm3);
-    saveSettings(DEFAULT_SETTINGS);
+    saveSettings(defaults);
     render();
   });
 
@@ -517,6 +685,7 @@ function init() {
   });
 
   initDropzone();
+  await loadFeeCatalog();
   render();
 }
 

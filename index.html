@@ -172,10 +172,78 @@
                   <span>Margem de lucro (%)</span>
                   <input name="profitMarginPercent" type="number" inputmode="decimal" min="0" step="1" required />
                 </label>
-                <label class="field wide">
-                  <span>Taxa do marketplace (%) — Mercado Livre, Shopee etc.</span>
-                  <input name="marketplaceFeePercent" type="number" inputmode="decimal" min="0" max="99" step="0.1" required />
+              </div>
+
+              <div class="fee-box">
+                <label class="field">
+                  <span>Taxa do marketplace</span>
+                  <select id="fee-mode" name="feeMode">
+                    <option value="custom">Percentual único</option>
+                    <option value="none">Sem taxa</option>
+                    <option value="mercado-livre">Mercado Livre</option>
+                    <option value="shopee">Shopee</option>
+                  </select>
                 </label>
+                <div id="fee-custom">
+                  <label class="field">
+                    <span>Percentual (%)</span>
+                    <input id="marketplace-fee" name="marketplaceFeePercent" type="number" inputmode="decimal" min="0" max="99" step="0.1" />
+                  </label>
+                </div>
+                <div id="fee-ml" hidden>
+                  <div class="fields">
+                    <label class="field">
+                      <span>Tipo de anúncio</span>
+                      <select id="ml-listing-type" name="mlListingType">
+                        <option value="classico">Clássico</option>
+                        <option value="premium">Premium</option>
+                      </select>
+                    </label>
+                    <label class="field">
+                      <span>Logística</span>
+                      <select id="ml-logistics" name="mlLogistics">
+                        <option value="me2">Mercado Envios (Full, coleta, agência)</option>
+                        <option value="flex">Envios Flex</option>
+                        <option value="me1">Envio próprio</option>
+                      </select>
+                    </label>
+                    <label class="field">
+                      <span>Percentual da categoria (%)</span>
+                      <input id="ml-percent" name="mlPercent" type="number" inputmode="decimal" min="0" max="99" step="0.1" placeholder="veja a faixa oficial" />
+                    </label>
+                    <label class="field">
+                      <span>Custo fixo informado (R$)</span>
+                      <input id="ml-fixed" name="mlFixedOverride" type="number" inputmode="decimal" min="0" step="0.01" placeholder="só se o simulador mostrar" />
+                    </label>
+                  </div>
+                </div>
+                <div id="fee-shopee" hidden>
+                  <div class="fields">
+                    <label class="field">
+                      <span>Vendedor</span>
+                      <select id="shopee-program" name="shopeeProgram">
+                        <option value="cnpj">CNPJ</option>
+                        <option value="cpf">CPF, menos de 450 pedidos em 90 dias</option>
+                        <option value="cpf-alto">CPF, mais de 450 pedidos em 90 dias</option>
+                      </select>
+                    </label>
+                    <label class="field">
+                      <span>Programa</span>
+                      <select id="shopee-full" name="shopeeFull">
+                        <option value="none">Sem Full+</option>
+                        <option value="40">Full+ de 40% a 70% dos pedidos</option>
+                        <option value="70">Full+ com 70% ou mais</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+                <p id="fee-source" class="source-note"></p>
+                <ul id="fee-bands" class="fee-bands"></ul>
+                <details id="fee-notes" class="fee-notes" hidden>
+                  <summary>O que a fonte oficial confirma</summary>
+                  <ul id="fee-notes-list"></ul>
+                </details>
+                <p id="fee-warning" class="fee-warning" hidden></p>
               </div>
 
               <button type="button" id="advanced-toggle" aria-expanded="false">Ajustes avançados</button>
@@ -236,6 +304,7 @@
               <span id="listing-label">Preço de anúncio (com taxa)</span>
               <b id="price-listing">—</b>
               <small>Você recebe <b id="price-net">—</b> depois da taxa do marketplace</small>
+              <p id="fee-breakdown" class="fee-breakdown" hidden></p>
             </div>
           </div>
         </aside>

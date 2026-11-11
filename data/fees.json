@@ -1,0 +1,216 @@
+{
+  "consultedAt": "2026-11-11",
+  "marketplaces": [
+    {
+      "id": "mercado-livre",
+      "name": "Mercado Livre",
+      "sourceUrl": "https://vendedores.mercadolivre.com.br/aprender/nota/como-funcionam-as-taxas-do-mercado-livre",
+      "secondarySourceUrl": "https://developers.mercadolivre.com.br/pt_br/comissao-por-vender",
+      "updatedAt": null,
+      "updatedAtLabel": "A Central de aprendizagem não publica data. A documentação para desenvolvedores foi atualizada em 03/09/2026.",
+      "notes": [
+        "A comissão percentual depende da categoria. A página pública só informa a faixa: 10% a 14% no Clássico e 15% a 19% no Premium. O percentual de cada categoria não está nessa página — informe o valor do simulador de custos da sua conta.",
+        "Abaixo de R$ 12,50 o custo fixo é 50% do preço da unidade, somado ao percentual. O exemplo oficial: vender a R$ 8 gera R$ 4 de custo fixo mais o percentual da categoria.",
+        "Entre R$ 12,50 e R$ 79 existem três faixas de custo fixo, mas os valores em reais não são publicados. Sem o valor do simulador, a conta não inventa esse número.",
+        "A partir de R$ 79 não há custo fixo.",
+        "Desde 02/03/2026, no Mercado Envios o custo fixo abaixo do limite só é cobrado no Flex. Full, coleta e agência não geram esse custo fixo. Envio próprio cobra. O frete em si é outra cobrança e não entra nesta conta."
+      ],
+      "listingTypes": [
+        {
+          "id": "classico",
+          "name": "Clássico",
+          "percentMin": 10,
+          "percentMax": 14,
+          "confirmed": true
+        },
+        {
+          "id": "premium",
+          "name": "Premium",
+          "percentMin": 15,
+          "percentMax": 19,
+          "confirmed": true
+        }
+      ],
+      "logistics": [
+        {
+          "id": "me2",
+          "name": "Mercado Envios (Full, coleta ou agência)",
+          "chargesFixedFee": false,
+          "confirmed": true
+        },
+        {
+          "id": "flex",
+          "name": "Envios Flex",
+          "chargesFixedFee": true,
+          "confirmed": true
+        },
+        {
+          "id": "me1",
+          "name": "Envio próprio",
+          "chargesFixedFee": true,
+          "confirmed": true
+        }
+      ],
+      "fixedFeeRules": [
+        {
+          "min": 0,
+          "max": 12.5,
+          "fixedKind": "percent_of_price",
+          "fixedPercent": 50,
+          "confirmed": true,
+          "label": "Abaixo de R$ 12,50: 50% do preço, além da comissão"
+        },
+        {
+          "min": 12.5,
+          "max": 79,
+          "fixedKind": "unknown",
+          "confirmed": false,
+          "label": "De R$ 12,50 a menos de R$ 79: três faixas, valores em R$ não publicados"
+        },
+        {
+          "min": 79,
+          "max": null,
+          "fixedKind": "amount",
+          "fixed": 0,
+          "confirmed": true,
+          "label": "A partir de R$ 79: sem custo fixo"
+        }
+      ]
+    },
+    {
+      "id": "shopee",
+      "name": "Shopee",
+      "sourceUrl": "https://seller.shopee.com.br/edu/article/26839/Comissao-para-vendedores-CNPJ-e-CPF-em-2026",
+      "secondarySourceUrl": "https://seller.shopee.com.br/edu/article/27600/Programa-Full-mais-Shopee",
+      "updatedAt": "2026-10-01",
+      "updatedAtLabel": "Tabela de comissão atualizada em 01/10/2026. Programa Full+ atualizado em 08/07/2026.",
+      "notes": [
+        "A comissão incide só sobre o preço do produto e já inclui a taxa de transação. Não somamos outra taxa por cima, nem o frete.",
+        "A faixa até R$ 79,99 passou de R$ 4,00 para R$ 4,50 de fixo em 01/10/2026. Os percentuais abaixo foram lidos da tabela oficial dessa página.",
+        "Para CNPJ, abaixo de R$ 9 o adicional por item é metade do preço do produto, no lugar dos R$ 4,50.",
+        "CPF com mais de 450 pedidos em 90 dias paga mais R$ 3 por item. Abaixo de R$ 12 a Shopee diz que a taxa do CPF é regressiva, mas não publica a fórmula.",
+        "O subsídio Pix (5% de R$ 80 a R$ 499,99 e até 8% acima de R$ 500) não muda o líquido do vendedor. No exemplo oficial de um item de R$ 500, a comissão no cartão é R$ 96 e o líquido é R$ 404, igual no Pix.",
+        "Os cupons de frete grátis (até R$ 20, R$ 30 ou R$ 40) não entram no preço do anúncio.",
+        "No Full+, a redução volta para a carteira no mês seguinte. A comissão do mês é cobrada cheia; o preço calculado com Full+ já considera esse crédito."
+      ],
+      "programs": [
+        {
+          "id": "cnpj",
+          "name": "CNPJ",
+          "extraFixed": 0,
+          "confirmed": true
+        },
+        {
+          "id": "cpf",
+          "name": "CPF com menos de 450 pedidos em 90 dias",
+          "extraFixed": 0,
+          "confirmed": true,
+          "note": "Sem o adicional de R$ 3."
+        },
+        {
+          "id": "cpf-alto",
+          "name": "CPF com mais de 450 pedidos em 90 dias",
+          "extraFixed": 3,
+          "confirmed": true,
+          "note": "Soma R$ 3 por item à comissão da tabela."
+        }
+      ],
+      "bands": [
+        {
+          "min": 0,
+          "max": 9,
+          "percent": 20,
+          "fixedKind": "percent_of_price",
+          "fixedPercent": 50,
+          "confirmed": true,
+          "programs": ["cnpj"],
+          "label": "Abaixo de R$ 9 (CNPJ): 20% + metade do preço"
+        },
+        {
+          "min": 9,
+          "max": 80,
+          "percent": 20,
+          "fixedKind": "amount",
+          "fixed": 4.5,
+          "confirmed": true,
+          "programs": ["cnpj"],
+          "label": "De R$ 9 a R$ 79,99 (CNPJ): 20% + R$ 4,50"
+        },
+        {
+          "min": 0,
+          "max": 80,
+          "percent": 20,
+          "fixedKind": "amount",
+          "fixed": 4.5,
+          "confirmed": true,
+          "programs": ["cpf", "cpf-alto"],
+          "label": "Até R$ 79,99 (CPF): 20% + R$ 4,50"
+        },
+        {
+          "min": 80,
+          "max": 100,
+          "percent": 14,
+          "fixedKind": "amount",
+          "fixed": 16,
+          "confirmed": true,
+          "label": "De R$ 80 a R$ 99,99: 14% + R$ 16"
+        },
+        {
+          "min": 100,
+          "max": 200,
+          "percent": 14,
+          "fixedKind": "amount",
+          "fixed": 20,
+          "confirmed": true,
+          "label": "De R$ 100 a R$ 199,99: 14% + R$ 20"
+        },
+        {
+          "min": 200,
+          "max": 500,
+          "percent": 14,
+          "fixedKind": "amount",
+          "fixed": 26,
+          "confirmed": true,
+          "label": "De R$ 200 a R$ 499,99: 14% + R$ 26"
+        },
+        {
+          "min": 500,
+          "max": null,
+          "percent": 14,
+          "fixedKind": "amount",
+          "fixed": 26,
+          "confirmed": true,
+          "label": "A partir de R$ 500: 14% + R$ 26"
+        }
+      ],
+      "fullPlus": [
+        {
+          "id": "none",
+          "name": "Sem Full+",
+          "confirmed": true,
+          "adjustments": []
+        },
+        {
+          "id": "40",
+          "name": "Full+ de 40% a 70% dos pedidos",
+          "confirmed": true,
+          "updatedAt": "2026-07-08",
+          "adjustments": [
+            { "min": 50, "max": 80, "delta": -0.5 },
+            { "min": 80, "max": null, "delta": -1 }
+          ]
+        },
+        {
+          "id": "70",
+          "name": "Full+ com 70% ou mais dos pedidos",
+          "confirmed": true,
+          "updatedAt": "2026-07-08",
+          "adjustments": [
+            { "min": 50, "max": 80, "delta": -1 },
+            { "min": 80, "max": null, "delta": -2 }
+          ]
+        }
+      ]
+    }
+  ]
+}
