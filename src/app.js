@@ -37,6 +37,7 @@ import { StlPreview } from "./preview.js";
 
 const MANUAL_KEY = "orca3d:manual";
 const QUOTE_DOC_KEY = "orca3d:quote-doc";
+const SHIPPING_KEY = "orca3d:shipping";
 
 const SETTING_FIELDS = [
   "material",
@@ -100,6 +101,10 @@ const els = {
   mlLogistics: document.getElementById("ml-logistics"),
   mlPercent: document.getElementById("ml-percent"),
   mlFixed: document.getElementById("ml-fixed"),
+  shippingEnabled: document.getElementById("shipping-enabled"),
+  shippingWeight: document.getElementById("shipping-weight"),
+  shippingOverride: document.getElementById("shipping-override"),
+  shippingNote: document.getElementById("shipping-note"),
   shopeeProgram: document.getElementById("shopee-program"),
   shopeeFull: document.getElementById("shopee-full"),
   printerSelect: document.getElementById("printer-select"),
@@ -433,7 +438,7 @@ function render() {
       ? { ...settings, marketplaceFeePercent: 0 }
       : settings;
   const quote = calculateQuote(geometry, quoteSettings, measured);
-  const feeResult = priceWithFeeTable(quote.suggestedPrice, settings);
+  const feeResult = priceWithFeeTable(quote.suggestedPrice, settings, quote.massGrams);
   const box = geometry?.boundingBox?.size;
 
   document.getElementById("results").classList.remove("is-empty");
@@ -500,7 +505,11 @@ function render() {
   if (feeResult?.ok) {
     setText("listing-label", `Preço de anúncio (${feeResult.marketplaceName})`);
     els.feeBreakdown.hidden = false;
-    els.feeBreakdown.textContent = `Comissão ${moneyFmt.format(feeResult.percentFee)} (${numberFmt.format(feeResult.percent)}%) + fixo ${moneyFmt.format(feeResult.fixedFee)}. ${feeResult.bandLabel}.`;
+    const shipBit =
+      feeResult.shippingAmount > 0 || feeResult.shippingLabel
+        ? ` Frete ${moneyFmt.format(feeResult.shippingAmount || 0)}${feeResult.shippingConfirmed ? "" : " (não confirmado)"}.`
+        : "";
+    els.feeBreakdown.textContent = `Comissão ${moneyFmt.format(feeResult.percentFee)} (${numberFmt.format(feeResult.percent)}%) + fixo ${moneyFmt.format(feeResult.fixedFee)}.${shipBit} ${feeResult.bandLabel}.`;
   } else if (settings.feeMode === "none") {
     setText("listing-label", "Preço de anúncio (sem taxa)");
     els.feeBreakdown.hidden = true;
@@ -524,7 +533,44 @@ function syncFeePanels() {
   els.feeShopee.hidden = mode !== "shopee";
 }
 
-function priceWithFeeTable(target, settings) {
+function readShipping() {
+  const override = explicitNumber(els.shippingOverride.value);
+  const weight = explicitNumber(els.shippingWeight.value);
+  return {
+    enabled: Boolean(els.shippingEnabled.checked),
+    weightGrams: weight,
+    overrideAmount: els.shippingOverride.value.trim() === "" ? null : override,
+  };
+}
+
+function saveShipping() {
+  try {
+    localStorage.setItem(
+      SHIPPING_KEY,
+      JSON.stringify({
+        enabled: els.shippingEnabled.checked,
+        weightGrams: els.shippingWeight.value,
+        overrideAmount: els.shippingOverride.value,
+      })
+    );
+  } catch {
+    // o cálculo segue com o que está na tela
+  }
+}
+
+function loadShipping() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SHIPPING_KEY) || "null");
+    if (!saved) return;
+    els.shippingEnabled.checked = Boolean(saved.enabled);
+    els.shippingWeight.value = saved.weightGrams ?? "";
+    els.shippingOverride.value = saved.overrideAmount ?? "";
+  } catch {
+    // ignora valor antigo
+  }
+}
+
+function priceWithFeeTable(target, settings, massGrams) {
   const selection = selectionFromSettings(settings);
   if (!selection) return null;
   if (!feeCatalog) {
@@ -535,6 +581,12 @@ function priceWithFeeTable(target, settings) {
       warnings: [],
     };
   }
+  const shipping = readShipping();
+  selection.shipping = {
+    enabled: shipping.enabled,
+    weightGrams: shipping.weightGrams == null ? massGrams : shipping.weightGrams,
+    overrideAmount: shipping.overrideAmount,
+  };
   return solveListingPrice(target, selection, feeCatalog);
 }
 
@@ -592,6 +644,7 @@ function paintFeePanel(settings, solved) {
   els.feeBands.innerHTML = bands
     .map((band) => `<li>${escapeHtml(band.label)}${band.confirmed === false ? " — valor não confirmado" : ""}</li>`)
     .join("");
+  paintShippingNote();
   els.feeNotes.hidden = !(market.notes || []).length;
   els.feeNotesList.innerHTML = (market.notes || []).map((note) => `<li>${escapeHtml(note)}</li>`).join("");
   const warnings = [];
@@ -602,6 +655,16 @@ function paintFeePanel(settings, solved) {
   }
   els.feeWarning.hidden = warnings.length === 0;
   els.feeWarning.textContent = warnings.join(" ");
+}
+
+function paintShippingNote() {
+  if (!els.shippingNote) return;
+  const shipping = feeCatalog?.marketplaces?.find((item) => item.id === "mercado-livre")?.shipping;
+  if (!shipping) {
+    els.shippingNote.textContent = "";
+    return;
+  }
+  els.shippingNote.textContent = `${shipping.updatedAtLabel} O R$ 6,85 (até 0,3 kg e abaixo de R$ 49) é um exemplo informado pelo vendedor, não confirmado — edite o campo se o seu extrato for outro. Fonte: ajuda 16467.`;
 }
 
 function describeUsage(quote, sliceView) {
@@ -786,6 +849,17 @@ async function init() {
     render();
   });
 
+  loadShipping();
+  for (const field of [els.shippingEnabled, els.shippingWeight, els.shippingOverride]) {
+    field.addEventListener("input", () => {
+      saveShipping();
+      render();
+    });
+    field.addEventListener("change", () => {
+      saveShipping();
+      render();
+    });
+  }
   initDropzone();
   bindProfiles();
   bindQuoteDocument();

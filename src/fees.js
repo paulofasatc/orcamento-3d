@@ -157,6 +157,116 @@ function inBand(price, band) {
 }
 
 /**
+ * Custo de envio do Mercado Envios para um preço de anúncio.
+ * Sem faixa confirmada, usa o valor digitado ou o exemplo de R$ 6,85
+ * (não confirmado) só até 0,3 kg e abaixo de R$ 49.
+ */
+export function resolveShipping(market, price, options = {}) {
+  if (!options.enabled) {
+    return { amount: 0, applied: false, confirmed: true, sellerReported: false, needsOverride: false, excluded: false, label: "Frete desligado" };
+  }
+  const shipping = market?.shipping;
+  if (!shipping) {
+    return {
+      amount: 0,
+      applied: false,
+      confirmed: true,
+      sellerReported: false,
+      needsOverride: false,
+      excluded: true,
+      label: "O frete da Shopee não entra neste cálculo",
+    };
+  }
+  const rule = (shipping.rules || []).find((item) => price >= item.min && (item.max == null || price < item.max));
+  if (!rule) {
+    return { amount: null, applied: true, confirmed: false, sellerReported: false, needsOverride: true, excluded: false, label: "Sem faixa de frete para este preço" };
+  }
+  if (options.logistics && options.logistics !== "me2") {
+    if (options.overrideAmount != null) {
+      return {
+        amount: Math.max(0, options.overrideAmount),
+        applied: true,
+        confirmed: false,
+        sellerReported: true,
+        needsOverride: false,
+        excluded: false,
+        label: "Frete informado por você. No Flex e no envio próprio a tabela de Envios não se aplica.",
+      };
+    }
+    return {
+      amount: null,
+      applied: true,
+      confirmed: false,
+      sellerReported: false,
+      needsOverride: true,
+      excluded: false,
+      label: "No Flex e no envio próprio informe o frete que você paga.",
+    };
+  }
+  if (rule.sellerPays === false && rule.confirmed) {
+    return { amount: 0, applied: true, confirmed: true, sellerReported: false, needsOverride: false, excluded: false, label: rule.label };
+  }
+  if (options.overrideAmount != null) {
+    return {
+      amount: Math.max(0, options.overrideAmount),
+      applied: true,
+      confirmed: false,
+      sellerReported: true,
+      needsOverride: false,
+      excluded: false,
+      label: `${rule.label}. Valor informado por você.`,
+    };
+  }
+  const weight = Number(options.weightGrams);
+  const example = shipping.sellerExample;
+  if (example && Number.isFinite(weight) && weight >= 0 && weight <= example.weightMaxG && price < example.priceMax) {
+    return {
+      amount: example.amount,
+      applied: true,
+      confirmed: false,
+      sellerReported: true,
+      needsOverride: false,
+      excluded: false,
+      label: example.label,
+    };
+  }
+  return {
+    amount: null,
+    applied: true,
+    confirmed: false,
+    sellerReported: false,
+    needsOverride: true,
+    excluded: false,
+    label: rule.label,
+  };
+}
+
+function splitByShipping(bands, rules) {
+  if (!rules?.length) return bands.map((band) => ({ ...band }));
+  const cuts = new Set();
+  for (const band of bands) {
+    cuts.add(band.min);
+    if (band.max != null) cuts.add(band.max);
+  }
+  for (const rule of rules) {
+    cuts.add(rule.min);
+    if (rule.max != null) cuts.add(rule.max);
+  }
+  const points = [...cuts].filter((n) => Number.isFinite(n)).sort((a, b) => a - b);
+  const pieces = [];
+  for (let i = 0; i < points.length; i += 1) {
+    const min = points[i];
+    const max = i + 1 < points.length ? points[i + 1] : null;
+    const band = bands.find((item) => min >= item.min && (item.max == null || min < item.max));
+    if (!band) continue;
+    const pieceMax = band.max == null ? max : max == null ? band.max : Math.min(max, band.max);
+    if (pieceMax != null && pieceMax <= min) continue;
+    pieces.push({ ...band, min, max: pieceMax });
+  }
+  return pieces;
+}
+
+/**
  * @param {number} targetNet
  * @param {object} selection
  * @param {object} catalog
@@ -196,26 +306,52 @@ export function solveListingPrice(targetNet, selection, catalog) {
     }
   }
 
-  const bands = bandsForSelection(market, selection);
+  const shippingOptions = {
+    enabled: Boolean(selection.shipping?.enabled),
+    weightGrams: selection.shipping?.weightGrams,
+    overrideAmount:
+      selection.shipping?.overrideAmount == null || selection.shipping.overrideAmount === ""
+        ? null
+        : Number(selection.shipping.overrideAmount),
+    logistics: selection.logistics,
+  };
+  if (shippingOptions.overrideAmount != null && !Number.isFinite(shippingOptions.overrideAmount)) {
+    shippingOptions.overrideAmount = null;
+  }
+  let bands = bandsForSelection(market, selection);
+  if (shippingOptions.enabled && market.shipping?.rules) {
+    bands = splitByShipping(bands, market.shipping.rules);
+  }
   const override = selection.fixedFeeOverride;
   /** @type {object[]} */
   const candidates = [];
 
   for (const band of bands) {
-    const solved = solveBand(band, target, extraFixed, override);
+    const probe = band.min + 0.001;
+    const ship = resolveShipping(market, probe, shippingOptions);
+    if (shippingOptions.enabled && (ship.needsOverride || ship.amount == null)) continue;
+    const solved = solveBand(band, target, extraFixed, override, ship.amount || 0);
     if (!solved) continue;
     if (!inBand(solved.listingPrice, band)) continue;
-    candidates.push({ ...solved, band });
+    candidates.push({ ...solved, band, shipping: ship });
   }
 
   const firm = candidates.filter((item) => !item.assumedUnknownFixed);
+  if (!firm.length && shippingOptions.enabled) {
+    const cover = coveringShippingPrice(bands, target, extraFixed, override, market, shippingOptions);
+    if (cover) firm.push(cover);
+  }
   if (!firm.length) {
     const unknown = bands.find((band) => band.fixedKind === "unknown");
+    const missingShip = shippingOptions.enabled && market.shipping;
     return blankResult(market, {
       needsFixedFee: Boolean(unknown),
-      message: unknown
-        ? "O anúncio cai na faixa em que o Mercado Livre não publica o custo fixo. Informe o valor do simulador de custos para fechar o preço."
-        : "Não foi possível achar um preço de anúncio compatível com as faixas desta tabela.",
+      needsShipping: Boolean(missingShip),
+      message: missingShip
+        ? "Não há valor de frete confirmado para esse peso e essa faixa. Informe o custo de envio que você paga."
+        : unknown
+          ? "O anúncio cai na faixa em que o Mercado Livre não publica o custo fixo. Informe o valor do simulador de custos para fechar o preço."
+          : "Não foi possível achar um preço de anúncio compatível com as faixas desta tabela.",
       warnings,
       bands,
     });
@@ -238,6 +374,15 @@ export function solveListingPrice(targetNet, selection, catalog) {
   if (override != null && best.band.fixedKind === "unknown") {
     warnings.push("O custo fixo usado foi o que você informou. A página oficial não publica esse valor.");
   }
+  if (best.shipping?.sellerReported) {
+    warnings.push(`${best.shipping.label} Não confirmado na tabela oficial.`);
+  }
+  if (best.shipping?.excluded) {
+    warnings.push(best.shipping.label);
+  }
+  if (best.netAboveTarget) {
+    warnings.push("O líquido fica um pouco acima do alvo: a faixa de frete muda de uma vez e não existe preço que feche exatamente.");
+  }
 
   return {
     ok: true,
@@ -247,7 +392,10 @@ export function solveListingPrice(targetNet, selection, catalog) {
     percent: best.percent,
     percentFee: best.percentFee,
     fixedFee: best.fixedFee,
-    feeTotal: best.percentFee + best.fixedFee,
+    shippingAmount: best.shippingAmount || 0,
+    shippingLabel: best.shipping?.label || "",
+    shippingConfirmed: best.shipping ? best.shipping.confirmed !== false && !best.shipping.sellerReported : true,
+    feeTotal: best.percentFee + best.fixedFee + (best.shippingAmount || 0),
     net: best.net,
     bandLabel: best.band.label,
     confirmed: best.band.confirmed !== false && !best.assumedUnknownFixed && (percentForRange ? percentForRange.confirmed : true),
@@ -264,9 +412,9 @@ export function solveListingPrice(targetNet, selection, catalog) {
   };
 }
 
-function solveBand(band, target, extraFixed, override) {
+function solveBand(band, target, extraFixed, override, shippingAmount = 0) {
   let rate = Number(band.percent) / 100;
-  let fixed = extraFixed;
+  let fixed = extraFixed + Math.max(0, Number(shippingAmount) || 0);
   let assumedUnknownFixed = false;
   if (!Number.isFinite(rate) || rate < 0) return null;
   if (band.fixedKind === "amount") fixed += Number(band.fixed) || 0;
@@ -279,14 +427,53 @@ function solveBand(band, target, extraFixed, override) {
   const listingPrice = (target + fixed) / (1 - rate);
   if (!Number.isFinite(listingPrice) || listingPrice < 0) return null;
   const percentFee = listingPrice * (Number(band.percent) / 100);
-  const fixedFee = listingPrice - target - percentFee;
+  const ship = Math.max(0, Number(shippingAmount) || 0);
+  const fixedFee = listingPrice - target - percentFee - ship;
   return {
     listingPrice,
     percent: band.percent,
     percentFee,
     fixedFee,
-    net: listingPrice - percentFee - fixedFee,
+    shippingAmount: ship,
+    net: listingPrice - percentFee - fixedFee - ship,
     assumedUnknownFixed,
     confirmed: band.confirmed !== false && !assumedUnknownFixed,
   };
+}
+
+function coveringShippingPrice(bands, target, extraFixed, override, market, shippingOptions) {
+  /** @type {object[]} */
+  const covers = [];
+  for (const band of bands) {
+    if (band.fixedKind === "unknown" && override == null) continue;
+    const edges = [band.min];
+    if (band.max != null) edges.push(Math.max(band.min, band.max - 0.01));
+    for (const price of edges) {
+      const ship = resolveShipping(market, price, shippingOptions);
+      if (ship.amount == null) continue;
+      const rate = Number(band.percent) / 100;
+      let fixed = extraFixed + ship.amount;
+      if (band.fixedKind === "amount") fixed += Number(band.fixed) || 0;
+      else if (band.fixedKind === "percent_of_price") continue;
+      else if (band.fixedKind === "unknown") fixed += override;
+      const net = price * (1 - rate) - fixed;
+      if (net + 1e-6 < target) continue;
+      const percentFee = price * rate;
+      covers.push({
+        listingPrice: price,
+        percent: band.percent,
+        percentFee,
+        fixedFee: price - net - percentFee - ship.amount,
+        shippingAmount: ship.amount,
+        net,
+        assumedUnknownFixed: false,
+        confirmed: band.confirmed !== false && ship.confirmed !== false && !ship.sellerReported,
+        band,
+        shipping: ship,
+        netAboveTarget: net > target + 0.02,
+      });
+    }
+  }
+  covers.sort((a, b) => a.listingPrice - b.listingPrice);
+  return covers[0] || null;
 }
