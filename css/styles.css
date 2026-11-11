@@ -308,6 +308,71 @@ p {
   letter-spacing: -0.03em;
 }
 
+.parts-panel {
+  padding: 0 16px 14px;
+  border-top: 1px solid var(--line);
+}
+
+.parts-list,
+.parts-summary {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.parts-list:empty::before {
+  content: "Nenhuma peça ainda. Envie um arquivo ou crie uma peça sem STL.";
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.part-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) 72px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.part-row.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.part-row button.linkish {
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.part-row input,
+.part-row select {
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: #fff;
+}
+
+.parts-summary {
+  margin: 0 0 12px;
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+}
+
+.parts-summary[hidden] {
+  display: none;
+}
+
 .manual-usage p {
   color: var(--muted);
   font-size: 0.82rem;
@@ -809,7 +874,8 @@ dialog p {
   }
 
   .profile-line,
-  .profile-actions {
+  .profile-actions,
+  .part-row {
     grid-template-columns: 1fr;
     grid-column: auto;
   }

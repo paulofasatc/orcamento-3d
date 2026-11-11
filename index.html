@@ -115,6 +115,13 @@
                 </label>
               </div>
             </div>
+            <div class="parts-panel" id="parts-panel">
+              <div class="manual-head">
+                <h3>Peças do orçamento</h3>
+                <button type="button" id="part-blank" class="btn ghost">Peça sem arquivo</button>
+              </div>
+              <ul id="parts-list" class="parts-list"></ul>
+            </div>
             <div id="slice-info" class="slice-info" hidden>
               <p id="slice-summary"></p>
               <p id="slice-warnings" class="slice-warnings" hidden></p>
@@ -412,6 +419,7 @@
             </div>
           </div>
           <p class="usage-source" id="usage-source" hidden></p>
+          <ul id="parts-summary" class="parts-summary" hidden></ul>
           <p class="material-detail" id="out-material-detail">Envie um STL para ver o orçamento.</p>
           <div class="cost-list">
             <div class="cost-row"><span>Filamento</span><b id="cost-filament">—</b></div>
