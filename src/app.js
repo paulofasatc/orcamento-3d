@@ -4,11 +4,15 @@ import {
   DEFAULT_SETTINGS,
   getMaterial,
   calculateQuote,
+  combineUsageSources,
+  explicitNumber,
+  manualTimeSeconds,
 } from "./quote.js";
 import { parseSliceBuffer, resolveSliceMass } from "./slice.js";
 import { StlPreview } from "./preview.js";
 
 const STORAGE_KEY = "orca3d:settings";
+const MANUAL_KEY = "orca3d:manual";
 
 const SETTING_FIELDS = [
   "material",
@@ -50,6 +54,10 @@ const els = {
   sliceSummary: document.getElementById("slice-summary"),
   sliceWarnings: document.getElementById("slice-warnings"),
   sliceClear: document.getElementById("slice-clear"),
+  manualMass: document.getElementById("manual-mass"),
+  manualHours: document.getElementById("manual-hours"),
+  manualMinutes: document.getElementById("manual-minutes"),
+  manualClear: document.getElementById("manual-clear"),
   usageSource: document.getElementById("usage-source"),
   material: document.getElementById("material"),
   density: document.getElementById("densityGCm3"),
@@ -168,18 +176,47 @@ function currentSliceView() {
   };
 }
 
+function readManual() {
+  return {
+    massGrams: explicitNumber(els.manualMass.value),
+    printTimeSeconds: manualTimeSeconds(els.manualHours.value, els.manualMinutes.value),
+  };
+}
+
+function saveManual() {
+  try {
+    localStorage.setItem(
+      MANUAL_KEY,
+      JSON.stringify({
+        mass: els.manualMass.value,
+        hours: els.manualHours.value,
+        minutes: els.manualMinutes.value,
+      })
+    );
+  } catch {
+    // o orçamento segue na memória
+  }
+}
+
+function loadManual() {
+  try {
+    const raw = localStorage.getItem(MANUAL_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    if (saved.mass != null) els.manualMass.value = String(saved.mass);
+    if (saved.hours != null) els.manualHours.value = String(saved.hours);
+    if (saved.minutes != null) els.manualMinutes.value = String(saved.minutes);
+  } catch {
+    // valor antigo ilegível
+  }
+}
+
 function measuredFromSlice(view) {
   if (!view) return null;
   const measured = {};
-  if (view.massGrams != null) {
-    measured.massGrams = view.massGrams;
-    measured.massSource = "slicer";
-  }
-  if (view.printTimeSeconds != null) {
-    measured.printTimeSeconds = view.printTimeSeconds;
-    measured.timeSource = "slicer";
-  }
-  return Object.keys(measured).length ? measured : null;
+  if (view.massGrams != null) measured.massGrams = view.massGrams;
+  if (view.printTimeSeconds != null) measured.printTimeSeconds = view.printTimeSeconds;
+  return measured.massGrams != null || measured.printTimeSeconds != null ? measured : null;
 }
 
 function renderSliceBanner(view) {
@@ -239,7 +276,7 @@ function render() {
   saveSettings(settings);
   const sliceView = currentSliceView();
   renderSliceBanner(sliceView);
-  const measured = measuredFromSlice(sliceView);
+  const measured = combineUsageSources(readManual(), measuredFromSlice(sliceView));
 
   if (!geometry && !measured) {
     renderEmpty();
@@ -265,19 +302,12 @@ function render() {
     setText("stat-triangles", "—");
   }
 
-  setText("mass-label", quote.massSource === "slicer" ? "Peso do fatiador" : "Peso estimado");
-  setText("time-label", quote.timeSource === "slicer" ? "Tempo do fatiador" : "Tempo estimado");
-  let usage = "";
-  const slicerName = sliceView?.slicer?.name || "o fatiador";
-  if (quote.massSource === "slicer" && quote.timeSource === "slicer") {
-    usage = `Peso e tempo lidos de ${slicerName}.`;
-  } else if (quote.massSource === "slicer") {
-    usage = `Peso lido de ${slicerName}. O tempo ainda é a estimativa.`;
-  } else if (quote.timeSource === "slicer") {
-    usage = `Tempo lido de ${slicerName}. O peso ainda é a estimativa.`;
-  }
-  els.usageSource.hidden = !usage;
-  els.usageSource.textContent = usage;
+  const massLabels = { slicer: "Peso do fatiador", manual: "Peso informado", estimate: "Peso estimado" };
+  const timeLabels = { slicer: "Tempo do fatiador", manual: "Tempo informado", estimate: "Tempo estimado" };
+  setText("mass-label", massLabels[quote.massSource] || "Peso");
+  setText("time-label", timeLabels[quote.timeSource] || "Tempo");
+  els.usageSource.hidden = false;
+  els.usageSource.textContent = describeUsage(quote, sliceView);
 
   setText("out-mass", `${numberFmt.format(quote.massGrams)} g`);
   setText("out-time", formatTime(quote.printTimeSeconds));
@@ -292,17 +322,19 @@ function render() {
   setText("price-net", moneyFmt.format(quote.netAfterFee));
 
   const mat = quote.material;
-  if (quote.massSource === "estimate" && geometry) {
+  if (!geometry) {
+    setText("out-material-detail", "Sem STL: o orçamento usa o peso e o tempo informados.");
+  } else if (quote.massSource === "estimate" && quote.timeSource === "estimate") {
     setText(
       "out-material-detail",
       `Casca ${numberFmt.format(mat.shellVolumeMm3)} mm³ · preenchimento ${numberFmt.format(mat.infillVolumeMm3)} mm³ · total ${numberFmt.format(mat.materialVolumeMm3)} mm³ de filamento (estimativa).`
     );
-  } else if (!geometry) {
-    setText("out-material-detail", "Sem STL: o orçamento usa só o peso e o tempo do fatiador.");
   } else {
+    const origin =
+      quote.massSource === "manual" || quote.timeSource === "manual" ? "o valor manual" : "o arquivo fatiado";
     setText(
       "out-material-detail",
-      `A estimativa do STL seria ${numberFmt.format(quote.estimatedMassGrams)} g e ${formatTime(quote.estimatedPrintTimeSeconds)}. O cálculo usa o arquivo fatiado.`
+      `A estimativa do STL seria ${numberFmt.format(quote.estimatedMassGrams)} g e ${formatTime(quote.estimatedPrintTimeSeconds)}. O cálculo usa ${origin}.`
     );
   }
 
@@ -313,6 +345,17 @@ function render() {
       ? `Preço de anúncio (taxa de ${numberFmt.format(fee)}%)`
       : "Preço de anúncio (sem taxa)"
   );
+}
+
+function describeUsage(quote, sliceView) {
+  const slicerName = sliceView?.slicer?.name || "o fatiador";
+  const part = (source, kind) => {
+    if (source === "manual") return `${kind} informado manualmente`;
+    if (source === "slicer") return `${kind} de ${slicerName}`;
+    if (source === "estimate") return `${kind} estimado pelo STL`;
+    return "";
+  };
+  return [part(quote.massSource, "Peso"), part(quote.timeSource, "Tempo")].filter(Boolean).join(". ") + ".";
 }
 
 function refreshFileLabel() {
@@ -457,8 +500,24 @@ function init() {
     render();
   });
 
+  loadManual();
+  const onManual = () => {
+    saveManual();
+    render();
+  };
+  els.manualMass.addEventListener("input", onManual);
+  els.manualHours.addEventListener("input", onManual);
+  els.manualMinutes.addEventListener("input", onManual);
+  els.manualClear.addEventListener("click", () => {
+    els.manualMass.value = "";
+    els.manualHours.value = "";
+    els.manualMinutes.value = "";
+    saveManual();
+    render();
+  });
+
   initDropzone();
-  renderEmpty();
+  render();
 }
 
 init();

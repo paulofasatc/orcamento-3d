@@ -73,6 +73,27 @@
                 </label>
               </div>
             </div>
+            <div class="manual-usage">
+              <div class="manual-head">
+                <h3>Peso e tempo manuais</h3>
+                <button type="button" id="manual-clear" class="btn ghost">Limpar</button>
+              </div>
+              <p>Opcional, com ou sem STL. O que você preencher vale no lugar do fatiador e da estimativa.</p>
+              <div class="fields">
+                <label class="field">
+                  <span>Peso (g)</span>
+                  <input id="manual-mass" type="number" inputmode="decimal" min="0" step="0.01" placeholder="automático" />
+                </label>
+                <label class="field">
+                  <span>Tempo (horas)</span>
+                  <input id="manual-hours" type="number" inputmode="decimal" min="0" step="1" placeholder="automático" />
+                </label>
+                <label class="field">
+                  <span>Tempo (minutos)</span>
+                  <input id="manual-minutes" type="number" inputmode="decimal" min="0" step="1" placeholder="automático" />
+                </label>
+              </div>
+            </div>
             <div id="slice-info" class="slice-info" hidden>
               <p id="slice-summary"></p>
               <p id="slice-warnings" class="slice-warnings" hidden></p>

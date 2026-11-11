@@ -154,8 +154,53 @@ export function estimatePrintTimeSeconds(materialVolumeMm3, settings) {
  */
 export function explicitNumber(value) {
   if (value == null || value === "") return null;
-  const n = Number(value);
+  const n = Number(String(value).replace(",", "."));
   return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Horas e minutos em branco significam "não informado".
+ * Um dos dois preenchido vale como tempo explícito (o outro conta como zero).
+ * @param {unknown} hours
+ * @param {unknown} minutes
+ * @returns {number|null}
+ */
+export function manualTimeSeconds(hours, minutes) {
+  const hoursBlank = hours == null || String(hours).trim() === "";
+  const minutesBlank = minutes == null || String(minutes).trim() === "";
+  if (hoursBlank && minutesBlank) return null;
+  const h = hoursBlank ? 0 : explicitNumber(hours);
+  const m = minutesBlank ? 0 : explicitNumber(minutes);
+  if (h == null || m == null) return null;
+  return Math.max(0, h) * 3600 + Math.max(0, m) * 60;
+}
+
+/**
+ * Manual vence o fatiador. O que ficar em branco cai para o fatiador.
+ * @param {{massGrams?: unknown, printTimeSeconds?: unknown}|null} manual
+ * @param {{massGrams?: unknown, printTimeSeconds?: unknown}|null} slicer
+ */
+export function combineUsageSources(manual, slicer) {
+  const measured = {};
+  const manualMass = explicitNumber(manual?.massGrams);
+  const slicerMass = explicitNumber(slicer?.massGrams);
+  if (manualMass != null) {
+    measured.massGrams = Math.max(0, manualMass);
+    measured.massSource = "manual";
+  } else if (slicerMass != null) {
+    measured.massGrams = Math.max(0, slicerMass);
+    measured.massSource = "slicer";
+  }
+  const manualTime = explicitNumber(manual?.printTimeSeconds);
+  const slicerTime = explicitNumber(slicer?.printTimeSeconds);
+  if (manualTime != null) {
+    measured.printTimeSeconds = Math.max(0, manualTime);
+    measured.timeSource = "manual";
+  } else if (slicerTime != null) {
+    measured.printTimeSeconds = Math.max(0, slicerTime);
+    measured.timeSource = "slicer";
+  }
+  return Object.keys(measured).length ? measured : null;
 }
 
 /**

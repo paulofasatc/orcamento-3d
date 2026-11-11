@@ -15,8 +15,10 @@ import {
 import {
   DEFAULT_SETTINGS,
   calculateQuote,
+  combineUsageSources,
   estimateMaterialVolume,
   estimatePrintTimeSeconds,
+  manualTimeSeconds,
   massGramsFromVolume,
 } from "../src/quote.js";
 
@@ -166,6 +168,20 @@ assert(almostEqual(onlyMass.printTimeSeconds, timeS, 1e-6), "o tempo segue a est
 const manualOnly = calculateQuote(null, DEFAULT_SETTINGS, { massGrams: 4, printTimeSeconds: 600 });
 assert(almostEqual(manualOnly.massGrams, 4) && almostEqual(manualOnly.printTimeSeconds, 600), "orçamento sem STL, só com valores informados");
 assert(manualOnly.costTotal > 0, "custo sem STL é positivo");
+assert(manualOnly.massSource === "measured", "sem rótulo, a origem fica genérica");
+
+console.log("\nPrioridade: manual, fatiador, estimativa");
+assert(manualTimeSeconds("", "") == null && manualTimeSeconds(null, null) == null, "tempo em branco não é zero");
+assert(manualTimeSeconds(1, 30) === 5400, "1 h 30 min = 5400 s");
+assert(manualTimeSeconds("", 15) === 900, "só os minutos contam");
+assert(manualTimeSeconds(0, "") === 0, "zero hora explícito é tempo zero");
+const mixed = combineUsageSources(
+  { massGrams: 8, printTimeSeconds: null },
+  { massGrams: 3, printTimeSeconds: 120 }
+);
+assert(mixed.massGrams === 8 && mixed.massSource === "manual", "peso manual vence o fatiador");
+assert(mixed.printTimeSeconds === 120 && mixed.timeSource === "slicer", "tempo em branco continua o do fatiador");
+assert(combineUsageSources(null, null) == null, "sem medição não há override");
 
 console.log("\nSTL inválido");
 let threw = false;

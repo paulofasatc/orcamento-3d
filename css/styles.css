@@ -288,6 +288,39 @@ p {
   display: none;
 }
 
+.manual-usage {
+  padding: 14px 16px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.manual-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.manual-head h3 {
+  font-size: 0.95rem;
+  letter-spacing: -0.03em;
+}
+
+.manual-usage p {
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin-bottom: 12px;
+}
+
+.manual-usage .fields {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.manual-usage .btn {
+  padding: 6px 12px;
+}
+
 .slice-info {
   display: flex;
   flex-wrap: wrap;
@@ -563,7 +596,8 @@ p {
   }
 
   .fields,
-  .hero-metrics {
+  .hero-metrics,
+  .manual-usage .fields {
     grid-template-columns: 1fr;
   }
 
