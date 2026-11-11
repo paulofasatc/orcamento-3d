@@ -31,6 +31,7 @@ import { parseSliceBuffer, resolveSliceMass } from "./slice.js";
 import {
   bandsForSelection,
   getMarketplace,
+  migrateShippingAmount,
   selectionFromSettings,
   solveListingPrice,
 } from "./fees.js";
@@ -104,7 +105,6 @@ const els = {
   mlPercent: document.getElementById("ml-percent"),
   mlFixed: document.getElementById("ml-fixed"),
   shippingEnabled: document.getElementById("shipping-enabled"),
-  shippingWeight: document.getElementById("shipping-weight"),
   shippingOverride: document.getElementById("shipping-override"),
   shippingNote: document.getElementById("shipping-note"),
   partsList: document.getElementById("parts-list"),
@@ -660,8 +660,8 @@ function render() {
     setText("listing-label", `Preço de anúncio (${feeResult.marketplaceName})`);
     els.feeBreakdown.hidden = false;
     const shipBit =
-      feeResult.shippingAmount > 0 || feeResult.shippingLabel
-        ? ` Frete ${moneyFmt.format(feeResult.shippingAmount || 0)}${feeResult.shippingConfirmed ? "" : " (não confirmado)"}.`
+      feeResult.shippingAmount > 0
+        ? ` Frete ${moneyFmt.format(feeResult.shippingAmount)}. ${feeResult.shippingLabel || ""}`
         : "";
     els.feeBreakdown.textContent = `Comissão ${moneyFmt.format(feeResult.percentFee)} (${numberFmt.format(feeResult.percent)}%) + fixo ${moneyFmt.format(feeResult.fixedFee)}.${shipBit} ${feeResult.bandLabel}.`;
   } else if (settings.feeMode === "none") {
@@ -689,10 +689,8 @@ function syncFeePanels() {
 
 function readShipping() {
   const override = explicitNumber(els.shippingOverride.value);
-  const weight = explicitNumber(els.shippingWeight.value);
   return {
     enabled: Boolean(els.shippingEnabled.checked),
-    weightGrams: weight,
     overrideAmount: els.shippingOverride.value.trim() === "" ? null : override,
   };
 }
@@ -703,7 +701,6 @@ function saveShipping() {
       SHIPPING_KEY,
       JSON.stringify({
         enabled: els.shippingEnabled.checked,
-        weightGrams: els.shippingWeight.value,
         overrideAmount: els.shippingOverride.value,
       })
     );
@@ -717,8 +714,7 @@ function loadShipping() {
     const saved = JSON.parse(localStorage.getItem(SHIPPING_KEY) || "null");
     if (!saved) return;
     els.shippingEnabled.checked = Boolean(saved.enabled);
-    els.shippingWeight.value = saved.weightGrams ?? "";
-    els.shippingOverride.value = saved.overrideAmount ?? "";
+    els.shippingOverride.value = migrateShippingAmount(saved.overrideAmount);
   } catch {
     // ignora valor antigo
   }
@@ -738,7 +734,6 @@ function priceWithFeeTable(target, settings, massGrams) {
   const shipping = readShipping();
   selection.shipping = {
     enabled: shipping.enabled,
-    weightGrams: shipping.weightGrams == null ? massGrams : shipping.weightGrams,
     overrideAmount: shipping.overrideAmount,
   };
   return solveListingPrice(target, selection, feeCatalog);
@@ -818,7 +813,7 @@ function paintShippingNote() {
     els.shippingNote.textContent = "";
     return;
   }
-  els.shippingNote.textContent = `${shipping.updatedAtLabel} O R$ 6,85 (até 0,3 kg e abaixo de R$ 49) é um exemplo informado pelo vendedor, não confirmado — edite o campo se o seu extrato for outro. Fonte: ajuda 16467.`;
+  els.shippingNote.textContent = shipping.sourceNote || shipping.label || "Confirmado em venda real, nov/2026; varia por peso, região e reputação.";
 }
 
 function describeUsage(quote, sliceView) {
@@ -1075,7 +1070,7 @@ async function init() {
     render();
   });
   loadShipping();
-  for (const field of [els.shippingEnabled, els.shippingWeight, els.shippingOverride]) {
+  for (const field of [els.shippingEnabled, els.shippingOverride]) {
     field.addEventListener("input", () => {
       saveShipping();
       render();
