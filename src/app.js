@@ -32,9 +32,11 @@ import {
   selectionFromSettings,
   solveListingPrice,
 } from "./fees.js";
+import { buildQuoteDocument } from "./pdf.js";
 import { StlPreview } from "./preview.js";
 
 const MANUAL_KEY = "orca3d:manual";
+const QUOTE_DOC_KEY = "orca3d:quote-doc";
 
 const SETTING_FIELDS = [
   "material",
@@ -110,6 +112,19 @@ const els = {
   confirmDialog: document.getElementById("confirm-dialog"),
   confirmText: document.getElementById("confirm-text"),
   profilesImport: document.getElementById("profiles-import"),
+  logoPreview: document.getElementById("logo-preview"),
+  logoInput: document.getElementById("logo-input"),
+  logoRemove: document.getElementById("logo-remove"),
+  bizName: document.getElementById("biz-name"),
+  bizContact: document.getElementById("biz-contact"),
+  customerName: document.getElementById("customer-name"),
+  customerContact: document.getElementById("customer-contact"),
+  quoteNumber: document.getElementById("quote-number"),
+  quoteDate: document.getElementById("quote-date"),
+  quoteValidity: document.getElementById("quote-validity"),
+  quoteNotes: document.getElementById("quote-notes"),
+  downloadPdf: document.getElementById("download-pdf"),
+  pdfMessage: document.getElementById("pdf-message"),
   advancedToggle: document.getElementById("advanced-toggle"),
   advanced: document.getElementById("advanced"),
 };
@@ -121,6 +136,8 @@ let geometry = null;
 let stlLabel = "";
 let sliceRaw = null;
 let sliceLabel = "";
+let partTitle = "";
+let logoDataUrl = "";
 let preview = null;
 
 function persistFromForm() {
@@ -611,6 +628,7 @@ async function loadSliceFile(file) {
     const settings = readFormSettings();
     sliceRaw = parseSliceBuffer(buffer, name, { densityGCm3: settings.densityGCm3 });
     sliceLabel = `${name} · ${formatFileSize(file.size)}`;
+    if (!partTitle) partTitle = name.replace(/\.(gcode\.3mf|3mf|gcode)$/i, "");
     refreshFileLabel();
     render();
   } catch (err) {
@@ -630,6 +648,7 @@ async function loadStlFile(file) {
     const buffer = await file.arrayBuffer();
     geometry = parseStl(buffer, name);
     stlLabel = `${name} · ${formatFileSize(file.size)} · ${geometry.format === "binary" ? "binário" : "ASCII"}`;
+    partTitle = name.replace(/\.stl$/i, "");
     refreshFileLabel();
     els.previewEmpty.hidden = true;
     if (!preview) {
@@ -640,6 +659,7 @@ async function loadStlFile(file) {
   } catch (err) {
     geometry = null;
     stlLabel = "";
+    partTitle = "";
     refreshFileLabel();
     els.previewEmpty.hidden = false;
     preview?.clear();
@@ -768,8 +788,181 @@ async function init() {
 
   initDropzone();
   bindProfiles();
+  bindQuoteDocument();
   await loadFeeCatalog();
   render();
+}
+
+function todayIso() {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
+function setPdfMessage(text, isError = false) {
+  els.pdfMessage.textContent = text || "";
+  els.pdfMessage.classList.toggle("is-error", Boolean(isError) && Boolean(text));
+}
+
+function readQuoteDoc() {
+  const days = Math.round(Number(els.quoteValidity.value));
+  return {
+    businessName: els.bizName.value.trim(),
+    businessContact: els.bizContact.value.trim(),
+    customerName: els.customerName.value.trim(),
+    customerContact: els.customerContact.value.trim(),
+    quoteNumber: els.quoteNumber.value.trim(),
+    quoteDate: els.quoteDate.value || todayIso(),
+    validityDays: Number.isFinite(days) ? Math.min(365, Math.max(1, days)) : 7,
+    notes: els.quoteNotes.value.trim(),
+  };
+}
+
+function saveQuoteDoc() {
+  try {
+    localStorage.setItem(QUOTE_DOC_KEY, JSON.stringify({ ...readQuoteDoc(), logoDataUrl }));
+  } catch {
+    setPdfMessage("Não foi possível guardar os dados do PDF neste navegador. A logo pode ser grande demais.", true);
+  }
+}
+
+function loadQuoteDoc() {
+  const today = todayIso();
+  let saved = {};
+  try {
+    saved = JSON.parse(localStorage.getItem(QUOTE_DOC_KEY) || "{}") || {};
+  } catch {
+    saved = {};
+  }
+  els.bizName.value = saved.businessName || "";
+  els.bizContact.value = saved.businessContact || "";
+  els.customerName.value = saved.customerName || "";
+  els.customerContact.value = saved.customerContact || "";
+  els.quoteDate.value = saved.quoteDate || today;
+  els.quoteNumber.value = saved.quoteNumber || `ORC-${(saved.quoteDate || today).replace(/-/g, "")}-01`;
+  els.quoteValidity.value = String(saved.validityDays || 7);
+  els.quoteNotes.value = saved.notes || "";
+  logoDataUrl = typeof saved.logoDataUrl === "string" && saved.logoDataUrl.startsWith("data:image/") ? saved.logoDataUrl : "";
+  paintLogo();
+}
+
+function paintLogo() {
+  const hasLogo = Boolean(logoDataUrl);
+  els.logoPreview.hidden = !hasLogo;
+  els.logoPreview.src = hasLogo ? logoDataUrl : "";
+  els.logoRemove.hidden = !hasLogo;
+}
+
+function fileToLogo(file) {
+  return new Promise((resolve, reject) => {
+    if (!file) {
+      reject(new Error("Escolha uma imagem."));
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      reject(new Error("A logo precisa ter no máximo 2 MB."));
+      return;
+    }
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type) && !/\.(png|jpe?g|webp)$/i.test(file.name)) {
+      reject(new Error("Use uma imagem PNG, JPEG ou WebP."));
+      return;
+    }
+    const image = new Image();
+    const url = URL.createObjectURL(file);
+    image.onload = () => {
+      const scale = Math.min(1, 480 / Math.max(image.width, image.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(image.width * scale));
+      canvas.height = Math.max(1, Math.round(image.height * scale));
+      canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+      if (dataUrl.length > 500_000) {
+        reject(new Error("A logo ficou grande demais para salvar no navegador. Tente uma imagem menor."));
+        return;
+      }
+      resolve(dataUrl);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Não foi possível ler essa imagem."));
+    };
+    image.src = url;
+  });
+}
+
+function currentQuoteSnapshot() {
+  const settings = persistFromForm();
+  const measured = combineUsageSources(readManual(), measuredFromSlice(currentSliceView()));
+  if (!geometry && !measured) return null;
+  const quoteSettings =
+    settings.feeMode && settings.feeMode !== "custom" ? { ...settings, marketplaceFeePercent: 0 } : settings;
+  return calculateQuote(geometry, quoteSettings, measured);
+}
+
+function itemDescription() {
+  if (partTitle) return partTitle;
+  const fromSlice = sliceLabel.split(" · ")[0]?.replace(/\.(gcode\.3mf|3mf|gcode)$/i, "");
+  return fromSlice || "Peça impressa em 3D";
+}
+
+async function loadJsPDF() {
+  if (globalThis.jspdf?.jsPDF) return globalThis.jspdf.jsPDF;
+  await new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = new URL("../vendor/jspdf.umd.min.js", import.meta.url).href;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Não foi possível carregar o gerador de PDF."));
+    document.head.appendChild(script);
+  });
+  if (!globalThis.jspdf?.jsPDF) throw new Error("O gerador de PDF não iniciou.");
+  return globalThis.jspdf.jsPDF;
+}
+
+function bindQuoteDocument() {
+  loadQuoteDoc();
+  const fields = [els.bizName, els.bizContact, els.customerName, els.customerContact, els.quoteNumber, els.quoteDate, els.quoteValidity, els.quoteNotes];
+  for (const field of fields) field.addEventListener("input", () => saveQuoteDoc());
+  els.logoInput.addEventListener("change", async () => {
+    const file = els.logoInput.files?.[0];
+    els.logoInput.value = "";
+    if (!file) return;
+    try {
+      logoDataUrl = await fileToLogo(file);
+      paintLogo();
+      saveQuoteDoc();
+      setPdfMessage("Logo pronta para o PDF.", false);
+    } catch (err) {
+      setPdfMessage(err.message || "Não foi possível usar essa logo.", true);
+    }
+  });
+  els.logoRemove.addEventListener("click", () => {
+    logoDataUrl = "";
+    paintLogo();
+    saveQuoteDoc();
+  });
+  els.downloadPdf.addEventListener("click", async () => {
+    const quote = currentQuoteSnapshot();
+    if (!quote) {
+      setPdfMessage("Informe um STL, um arquivo fatiado ou o peso e o tempo antes de gerar o PDF.", true);
+      return;
+    }
+    const details = readQuoteDoc();
+    try {
+      const JsPDF = await loadJsPDF();
+      const doc = buildQuoteDocument(JsPDF, {
+        ...details,
+        logoDataUrl,
+        items: [{ description: itemDescription(), quantity: 1, unitPrice: quote.suggestedPrice }],
+      });
+      const fileName = `${(details.quoteNumber || "orcamento").replace(/[^\w.-]+/g, "-")}.pdf`;
+      doc.save(fileName);
+      setPdfMessage("PDF gerado com o preço sugerido, sem o custo interno.", false);
+    } catch (err) {
+      setPdfMessage(err?.message || "Não foi possível gerar o PDF.", true);
+    }
+  });
 }
 
 function bindProfiles() {

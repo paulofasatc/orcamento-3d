@@ -53,7 +53,8 @@ svg {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -621,7 +622,8 @@ dialog select {
   grid-column: auto;
 }
 
-#profiles-message.is-error {
+#profiles-message.is-error,
+#pdf-message.is-error {
   color: var(--danger);
 }
 
@@ -677,7 +679,8 @@ dialog p {
 }
 
 .field input,
-.field select {
+.field select,
+.field textarea {
   width: 100%;
   border: 1px solid var(--line-strong);
   background: #fff;
@@ -686,8 +689,39 @@ dialog p {
   color: var(--ink);
 }
 
+.field textarea {
+  resize: vertical;
+  min-height: 72px;
+}
+
+.logo-row {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+#logo-preview {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+
+#logo-preview[hidden] {
+  display: none;
+}
+
+.logo-row .btn {
+  margin-right: 8px;
+  margin-bottom: 6px;
+}
+
 .field input:focus,
 .field select:focus,
+.field textarea:focus,
 #reset-settings:focus,
 .btn:focus {
   outline: 2px solid var(--accent);

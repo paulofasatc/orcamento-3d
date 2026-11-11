@@ -5,7 +5,7 @@
   "description": "Orça3D — orçamento de impressão 3D no navegador (STL, volume, custos em R$).",
   "type": "module",
   "scripts": {
-    "test": "node tests/quote.test.js && node tests/slice.test.js && node tests/fees.test.js && node tests/profiles.test.js",
+    "test": "node tests/quote.test.js && node tests/slice.test.js && node tests/fees.test.js && node tests/profiles.test.js && node tests/pdf.test.js",
     "start": "python3 -m http.server 4173",
     "preview": "python3 -m http.server 4173"
   }

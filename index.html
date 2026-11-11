@@ -303,11 +303,65 @@
               </div>
             </form>
           </section>
+
+          <section class="card settings" id="customer-quote">
+            <h2>PDF para o cliente</h2>
+            <p class="estimate-note">O arquivo leva o preço sugerido, a quantidade e o total. Custo de filamento, energia, máquina e taxa de marketplace ficam de fora.</p>
+            <div class="logo-row">
+              <img id="logo-preview" alt="Logo da empresa" hidden />
+              <div>
+                <label class="btn ghost">
+                  Enviar logo
+                  <input id="logo-input" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+                </label>
+                <button type="button" id="logo-remove" class="btn ghost" hidden>Remover logo</button>
+                <p class="source-note">PNG, JPEG ou WebP, até 2 MB. Fica só neste navegador.</p>
+              </div>
+            </div>
+            <div class="fields">
+              <label class="field">
+                <span>Seu nome ou empresa</span>
+                <input id="biz-name" type="text" maxlength="80" autocomplete="organization" />
+              </label>
+              <label class="field">
+                <span>Seu contato</span>
+                <input id="biz-contact" type="text" maxlength="120" autocomplete="tel" />
+              </label>
+              <label class="field">
+                <span>Cliente</span>
+                <input id="customer-name" type="text" maxlength="80" />
+              </label>
+              <label class="field">
+                <span>Contato do cliente</span>
+                <input id="customer-contact" type="text" maxlength="120" />
+              </label>
+              <label class="field">
+                <span>Número do orçamento</span>
+                <input id="quote-number" type="text" maxlength="40" />
+              </label>
+              <label class="field">
+                <span>Data</span>
+                <input id="quote-date" type="date" />
+              </label>
+              <label class="field">
+                <span>Validade (dias)</span>
+                <input id="quote-validity" type="number" min="1" max="365" step="1" value="7" />
+              </label>
+              <label class="field wide">
+                <span>Observações</span>
+                <textarea id="quote-notes" maxlength="800" rows="3"></textarea>
+              </label>
+            </div>
+            <div class="profile-actions profile-io">
+              <button type="button" id="download-pdf" class="btn">Baixar PDF</button>
+            </div>
+            <p id="pdf-message" class="source-note" role="status"></p>
+          </section>
         </div>
 
         <aside class="card results" id="results">
           <h2>Orçamento</h2>
-          <p class="estimate-note">Peso e tempo são estimativas. Ajuste os parâmetros até chegar perto da sua impressora.</p>
+          <p class="estimate-note">Peso e tempo vêm da estimativa, do fatiador ou do valor digitado. Ajuste até ficar perto da sua impressora.</p>
           <div class="hero-metrics">
             <div class="hero-metric">
               <span class="eyebrow" id="mass-label">Peso estimado</span>
