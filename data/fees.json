@@ -14,55 +14,15 @@
         "Entre R$ 12,50 e R$ 79 existem três faixas de custo fixo, mas os valores em reais não são publicados. Sem o valor do simulador, a conta não inventa esse número.",
         "A partir de R$ 79 não há custo fixo.",
         "Desde 02/03/2026, no Mercado Envios o custo fixo abaixo do limite só é cobrado no Flex. Full, coleta e agência não geram esse custo fixo. Envio próprio cobra.",
-        "Frete: em produtos novos de R$ 19 a R$ 78,99 com entrega padrão, a ajuda oficial diz que o Mercado Livre paga o envio. Abaixo de R$ 19 o custo fica com o vendedor. A partir de R$ 79 o vendedor paga um custo por peso e reputação. A tabela em reais da página 40538 não veio no HTML consultado em 11/11/2026, então esses valores ficam como não confirmados. O R$ 6,85 é só um exemplo informado por um vendedor, editável."
+        "Frete: quando está ligado, o valor pago pelo vendedor entra no preço de anúncio em qualquer faixa. O padrão é R$ 13,90, confirmado numa venda real em novembro de 2026; o frete varia por peso, região e reputação e pode ser editado."
       ],
       "shipping": {
-        "consultedAt": "2026-11-11",
-        "sourceUrl": "https://www.mercadolivre.com.br/ajuda/16467",
-        "tableUrl": "https://www.mercadolivre.com.br/ajuda/custos-envio-reputacao-verde-mercado-lider_40538",
-        "updatedAt": null,
-        "updatedAtLabel": "Ajuda 16467 consultada em 11/11/2026. A tabela numérica da ajuda 40538 não foi publicada no HTML dessa consulta.",
-        "appliesToLogistics": ["me2"],
-        "rules": [
-          {
-            "min": 0,
-            "max": 19,
-            "sellerPays": true,
-            "amount": null,
-            "confirmed": true,
-            "label": "Abaixo de R$ 19: o frete grátis é opcional e o custo fica com o vendedor"
-          },
-          {
-            "min": 19,
-            "max": 79,
-            "sellerPays": false,
-            "amount": 0,
-            "confirmed": true,
-            "label": "De R$ 19 a R$ 78,99, entrega padrão: o Mercado Livre paga o envio"
-          },
-          {
-            "min": 79,
-            "max": null,
-            "sellerPays": true,
-            "amount": null,
-            "confirmed": false,
-            "label": "A partir de R$ 79: o vendedor paga o envio, mas o valor em reais da tabela geral não foi confirmado"
-          }
-        ],
-        "weightBands": [
-          { "minG": 0, "maxG": 300, "label": "Até 0,3 kg", "amount": null, "confirmed": false },
-          { "minG": 300, "maxG": 500, "label": "De 0,3 a 0,5 kg", "amount": null, "confirmed": false },
-          { "minG": 500, "maxG": 1000, "label": "De 0,5 a 1 kg", "amount": null, "confirmed": false },
-          { "minG": 1000, "maxG": null, "label": "Acima de 1 kg", "amount": null, "confirmed": false }
-        ],
-        "sellerExample": {
-          "amount": 6.85,
-          "weightMaxG": 300,
-          "priceMax": 49,
-          "confirmed": false,
-          "sellerReported": true,
-          "label": "Até 0,3 kg e preço abaixo de R$ 49: R$ 6,85 informado pelo vendedor, não confirmado"
-        }
+        "consultedAt": "2026-11",
+        "sourceUrl": null,
+        "sourceNote": "Confirmado em venda real, nov/2026; varia por peso, região e reputação.",
+        "defaultAmount": 13.9,
+        "previousDefaultAmount": 6.85,
+        "label": "Confirmado em venda real, nov/2026; varia por peso, região e reputação."
       },
       "listingTypes": [
         {
