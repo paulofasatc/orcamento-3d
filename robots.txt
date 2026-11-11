@@ -1,0 +1,10 @@
+# robots.txt só é honrado na raiz do domínio (por exemplo https://paulofasatc.github.io/robots.txt).
+# Este arquivo fica em /orcamento-3d/robots.txt enquanto o site é servido como projeto do GitHub Pages,
+# então os buscadores ainda não o aplicam. Os caminhos abaixo já usam o prefixo /orcamento-3d/
+# para valerem quando o Orça3D for para um domínio próprio.
+
+User-agent: *
+Disallow: /orcamento-3d/mockups/
+Allow: /orcamento-3d/
+
+Sitemap: https://paulofasatc.github.io/orcamento-3d/sitemap.xml
