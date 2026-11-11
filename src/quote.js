@@ -148,20 +148,86 @@ export function estimatePrintTimeSeconds(materialVolumeMm3, settings) {
 }
 
 /**
+ * Número explícito, inclusive 0. null/undefined/NaN significam "não informado".
+ * @param {unknown} value
+ * @returns {number|null}
+ */
+export function explicitNumber(value) {
+  if (value == null || value === "") return null;
+  const n = Number(String(value).replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Horas e minutos em branco significam "não informado".
+ * Um dos dois preenchido vale como tempo explícito (o outro conta como zero).
+ * @param {unknown} hours
+ * @param {unknown} minutes
+ * @returns {number|null}
+ */
+export function manualTimeSeconds(hours, minutes) {
+  const hoursBlank = hours == null || String(hours).trim() === "";
+  const minutesBlank = minutes == null || String(minutes).trim() === "";
+  if (hoursBlank && minutesBlank) return null;
+  const h = hoursBlank ? 0 : explicitNumber(hours);
+  const m = minutesBlank ? 0 : explicitNumber(minutes);
+  if (h == null || m == null) return null;
+  return Math.max(0, h) * 3600 + Math.max(0, m) * 60;
+}
+
+/**
+ * Manual vence o fatiador. O que ficar em branco cai para o fatiador.
+ * @param {{massGrams?: unknown, printTimeSeconds?: unknown}|null} manual
+ * @param {{massGrams?: unknown, printTimeSeconds?: unknown}|null} slicer
+ */
+export function combineUsageSources(manual, slicer) {
+  const measured = {};
+  const manualMass = explicitNumber(manual?.massGrams);
+  const slicerMass = explicitNumber(slicer?.massGrams);
+  if (manualMass != null) {
+    measured.massGrams = Math.max(0, manualMass);
+    measured.massSource = "manual";
+  } else if (slicerMass != null) {
+    measured.massGrams = Math.max(0, slicerMass);
+    measured.massSource = "slicer";
+  }
+  const manualTime = explicitNumber(manual?.printTimeSeconds);
+  const slicerTime = explicitNumber(slicer?.printTimeSeconds);
+  if (manualTime != null) {
+    measured.printTimeSeconds = Math.max(0, manualTime);
+    measured.timeSource = "manual";
+  } else if (slicerTime != null) {
+    measured.printTimeSeconds = Math.max(0, slicerTime);
+    measured.timeSource = "slicer";
+  }
+  return Object.keys(measured).length ? measured : null;
+}
+
+/**
  * Calcula o orçamento completo a partir da geometria e dos parâmetros.
+ * `measured.massGrams` e `measured.printTimeSeconds`, quando forem números,
+ * substituem a estimativa (peso e tempo lidos do fatiador ou digitados).
  *
  * Taxa de marketplace: o preço de anúncio é reajustado para que, depois da
- * comissão, o valor líquido seja o preço sugerido (lucro incluído).
+ * comissão percentual, o valor líquido seja o preço sugerido (lucro incluído).
  * listingPrice = suggestedPrice / (1 - fee/100)
+ * Tabelas com taxa fixa ficam em src/fees.js.
  *
- * @param {QuoteGeometry} geometry
+ * @param {QuoteGeometry|null|undefined} geometry
  * @param {QuoteSettings} settings
+ * @param {{massGrams?: number|null, printTimeSeconds?: number|null, massSource?: string, timeSource?: string}} [measured]
  */
-export function calculateQuote(geometry, settings) {
+export function calculateQuote(geometry, settings, measured) {
   const s = { ...DEFAULT_SETTINGS, ...settings };
-  const material = estimateMaterialVolume(geometry, s);
-  const massGrams = massGramsFromVolume(material.materialVolumeMm3, s.densityGCm3);
-  const printTimeSeconds = estimatePrintTimeSeconds(material.materialVolumeMm3, s);
+  const geom = geometry && typeof geometry === "object" ? geometry : { volumeMm3: 0, surfaceAreaMm2: 0 };
+  const material = estimateMaterialVolume(geom, s);
+  const estimatedMassGrams = massGramsFromVolume(material.materialVolumeMm3, s.densityGCm3);
+  const estimatedPrintTimeSeconds = estimatePrintTimeSeconds(material.materialVolumeMm3, s);
+  const measuredMass = explicitNumber(measured?.massGrams);
+  const measuredTime = explicitNumber(measured?.printTimeSeconds);
+  const hasGeometry = !!(geometry && typeof geometry === "object");
+  const massGrams = measuredMass != null ? Math.max(0, measuredMass) : estimatedMassGrams;
+  const printTimeSeconds = measuredTime != null ? Math.max(0, measuredTime) : estimatedPrintTimeSeconds;
   const printTimeHours = printTimeSeconds / 3600;
 
   const filamentCost = (massGrams / 1000) * Math.max(0, Number(s.filamentPricePerKg) || 0);
@@ -188,6 +254,10 @@ export function calculateQuote(geometry, settings) {
     massGrams,
     printTimeSeconds,
     printTimeHours,
+    massSource: measuredMass != null ? measured?.massSource || "measured" : hasGeometry ? "estimate" : "none",
+    timeSource: measuredTime != null ? measured?.timeSource || "measured" : hasGeometry ? "estimate" : "none",
+    estimatedMassGrams,
+    estimatedPrintTimeSeconds,
     costs: {
       filament: filamentCost,
       energy: energyCost,

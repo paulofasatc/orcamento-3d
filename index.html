@@ -3,11 +3,32 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Orça3D — Orçamento de impressão 3D</title>
     <meta
       name="description"
-      content="Calcule material, tempo e preço de venda de peças impressas em 3D. Arquivo STL processado no seu navegador."
+      content="Calcule peso, tempo e preço de peças impressas em 3D a partir do STL ou do G-code. Perfis de impressora e filamento, taxas de marketplace e PDF para o cliente. Tudo no navegador."
     />
-    <title>Orça3D — Orçamento de impressão 3D</title>
+    <link rel="canonical" href="https://paulofasatc.github.io/orcamento-3d/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="pt_BR" />
+    <meta property="og:site_name" content="Orça3D" />
+    <meta property="og:title" content="Orça3D — Orçamento de impressão 3D" />
+    <meta
+      property="og:description"
+      content="Peso, tempo e preço de venda a partir do STL ou do G-code. Perfis, taxas e PDF para o cliente, sem enviar o arquivo para um servidor."
+    />
+    <meta property="og:url" content="https://paulofasatc.github.io/orcamento-3d/" />
+    <meta property="og:image" content="https://paulofasatc.github.io/orcamento-3d/assets/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Orça3D — orçamento de impressão 3D" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Orça3D — Orçamento de impressão 3D" />
+    <meta
+      name="twitter:description"
+      content="Peso, tempo e preço de venda a partir do STL ou do G-code. Perfis, taxas e PDF para o cliente, no navegador."
+    />
+    <meta name="twitter:image" content="https://paulofasatc.github.io/orcamento-3d/assets/og.png" />
     <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -50,7 +71,7 @@
               id="dropzone"
               role="button"
               tabindex="0"
-              aria-label="Enviar arquivo STL"
+              aria-label="Enviar STL, G-code ou 3MF fatiado"
             >
               <div class="preview-stage">
                 <div id="preview"></div>
@@ -60,18 +81,44 @@
                       <path d="M12 3 4.5 7.5v9L12 21l7.5-4.5v-9L12 3Z" />
                       <path d="M12 12 4.5 7.5M12 12v9M12 12l7.5-4.5" />
                     </svg>
-                    <strong>Envie um arquivo STL</strong>
-                    <span>Arraste o modelo para cá ou clique para escolher. O arquivo fica só no seu navegador — nada é enviado a um servidor.</span>
+                    <strong>Envie o STL, o G-code ou o 3MF fatiado</strong>
+                    <span>O STL mostra a peça e estima peso e tempo. O G-code ou o .gcode.3mf do Orca, Bambu, Prusa ou Cura traz o peso e o tempo reais do fatiador. Tudo fica no seu navegador.</span>
                   </div>
                 </div>
               </div>
               <div class="file-bar">
                 <span id="file-name">Nenhum arquivo selecionado</span>
                 <label class="btn">
-                  Escolher STL
-                  <input id="file-input" type="file" accept=".stl,model/stl" hidden />
+                  Escolher arquivo
+                  <input id="file-input" type="file" accept=".stl,.gcode,.3mf,model/stl" multiple hidden />
                 </label>
               </div>
+            </div>
+            <div class="manual-usage">
+              <div class="manual-head">
+                <h3>Peso e tempo manuais</h3>
+                <button type="button" id="manual-clear" class="btn ghost">Limpar</button>
+              </div>
+              <p>Opcional, com ou sem STL. O que você preencher vale no lugar do fatiador e da estimativa.</p>
+              <div class="fields">
+                <label class="field">
+                  <span>Peso (g)</span>
+                  <input id="manual-mass" type="number" inputmode="decimal" min="0" step="0.01" placeholder="automático" />
+                </label>
+                <label class="field">
+                  <span>Tempo (horas)</span>
+                  <input id="manual-hours" type="number" inputmode="decimal" min="0" step="1" placeholder="automático" />
+                </label>
+                <label class="field">
+                  <span>Tempo (minutos)</span>
+                  <input id="manual-minutes" type="number" inputmode="decimal" min="0" step="1" placeholder="automático" />
+                </label>
+              </div>
+            </div>
+            <div id="slice-info" class="slice-info" hidden>
+              <p id="slice-summary"></p>
+              <p id="slice-warnings" class="slice-warnings" hidden></p>
+              <button type="button" id="slice-clear" class="btn ghost">Descartar dados do fatiador</button>
             </div>
             <p id="error" hidden></p>
             <div class="stats">
@@ -96,8 +143,42 @@
 
           <section class="card settings">
             <h2>Parâmetros de impressão e custo</h2>
+            <div class="profiles">
+              <div class="profile-line">
+                <span>Impressora</span>
+                <select id="printer-select" aria-label="Impressora ativa"></select>
+                <div class="profile-actions">
+                  <button type="button" id="printer-new" class="btn ghost">Nova</button>
+                  <button type="button" id="printer-rename" class="btn ghost">Renomear</button>
+                  <button type="button" id="printer-duplicate" class="btn ghost">Duplicar</button>
+                  <button type="button" id="printer-delete" class="btn ghost">Excluir</button>
+                </div>
+              </div>
+              <div class="profile-line">
+                <span>Filamento</span>
+                <select id="filament-select" aria-label="Filamento ativo"></select>
+                <div class="profile-actions">
+                  <button type="button" id="filament-new" class="btn ghost">Novo</button>
+                  <button type="button" id="filament-rename" class="btn ghost">Renomear</button>
+                  <button type="button" id="filament-duplicate" class="btn ghost">Duplicar</button>
+                  <button type="button" id="filament-delete" class="btn ghost">Excluir</button>
+                </div>
+              </div>
+              <div class="profile-actions profile-io">
+                <button type="button" id="profiles-export" class="btn">Exportar perfis</button>
+                <label class="btn ghost">
+                  Importar perfis
+                  <input id="profiles-import" type="file" accept="application/json,.json" hidden />
+                </label>
+              </div>
+              <p id="profiles-message" class="source-note" role="status"></p>
+            </div>
             <form id="settings-form" autocomplete="off">
               <div class="fields">
+                <label class="field wide">
+                  <span>Nome do filamento (marca / cor)</span>
+                  <input id="filament-name" type="text" maxlength="60" autocomplete="off" />
+                </label>
                 <label class="field">
                   <span>Material</span>
                   <select id="material" name="material"></select>
@@ -146,10 +227,78 @@
                   <span>Margem de lucro (%)</span>
                   <input name="profitMarginPercent" type="number" inputmode="decimal" min="0" step="1" required />
                 </label>
-                <label class="field wide">
-                  <span>Taxa do marketplace (%) — Mercado Livre, Shopee etc.</span>
-                  <input name="marketplaceFeePercent" type="number" inputmode="decimal" min="0" max="99" step="0.1" required />
+              </div>
+
+              <div class="fee-box">
+                <label class="field">
+                  <span>Taxa do marketplace</span>
+                  <select id="fee-mode" name="feeMode">
+                    <option value="custom">Percentual único</option>
+                    <option value="none">Sem taxa</option>
+                    <option value="mercado-livre">Mercado Livre</option>
+                    <option value="shopee">Shopee</option>
+                  </select>
                 </label>
+                <div id="fee-custom">
+                  <label class="field">
+                    <span>Percentual (%)</span>
+                    <input id="marketplace-fee" name="marketplaceFeePercent" type="number" inputmode="decimal" min="0" max="99" step="0.1" />
+                  </label>
+                </div>
+                <div id="fee-ml" hidden>
+                  <div class="fields">
+                    <label class="field">
+                      <span>Tipo de anúncio</span>
+                      <select id="ml-listing-type" name="mlListingType">
+                        <option value="classico">Clássico</option>
+                        <option value="premium">Premium</option>
+                      </select>
+                    </label>
+                    <label class="field">
+                      <span>Logística</span>
+                      <select id="ml-logistics" name="mlLogistics">
+                        <option value="me2">Mercado Envios (Full, coleta, agência)</option>
+                        <option value="flex">Envios Flex</option>
+                        <option value="me1">Envio próprio</option>
+                      </select>
+                    </label>
+                    <label class="field">
+                      <span>Percentual da categoria (%)</span>
+                      <input id="ml-percent" name="mlPercent" type="number" inputmode="decimal" min="0" max="99" step="0.1" placeholder="veja a faixa oficial" />
+                    </label>
+                    <label class="field">
+                      <span>Custo fixo informado (R$)</span>
+                      <input id="ml-fixed" name="mlFixedOverride" type="number" inputmode="decimal" min="0" step="0.01" placeholder="só se o simulador mostrar" />
+                    </label>
+                  </div>
+                </div>
+                <div id="fee-shopee" hidden>
+                  <div class="fields">
+                    <label class="field">
+                      <span>Vendedor</span>
+                      <select id="shopee-program" name="shopeeProgram">
+                        <option value="cnpj">CNPJ</option>
+                        <option value="cpf">CPF, menos de 450 pedidos em 90 dias</option>
+                        <option value="cpf-alto">CPF, mais de 450 pedidos em 90 dias</option>
+                      </select>
+                    </label>
+                    <label class="field">
+                      <span>Programa</span>
+                      <select id="shopee-full" name="shopeeFull">
+                        <option value="none">Sem Full+</option>
+                        <option value="40">Full+ de 40% a 70% dos pedidos</option>
+                        <option value="70">Full+ com 70% ou mais</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+                <p id="fee-source" class="source-note"></p>
+                <ul id="fee-bands" class="fee-bands"></ul>
+                <details id="fee-notes" class="fee-notes" hidden>
+                  <summary>O que a fonte oficial confirma</summary>
+                  <ul id="fee-notes-list"></ul>
+                </details>
+                <p id="fee-warning" class="fee-warning" hidden></p>
               </div>
 
               <button type="button" id="advanced-toggle" aria-expanded="false">Ajustes avançados</button>
@@ -175,21 +324,76 @@
               </div>
             </form>
           </section>
+
+          <section class="card settings" id="customer-quote">
+            <h2>PDF para o cliente</h2>
+            <p class="estimate-note">O arquivo leva o preço sugerido, a quantidade e o total. Custo de filamento, energia, máquina e taxa de marketplace ficam de fora.</p>
+            <div class="logo-row">
+              <img id="logo-preview" alt="Logo da empresa" hidden />
+              <div>
+                <label class="btn ghost">
+                  Enviar logo
+                  <input id="logo-input" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+                </label>
+                <button type="button" id="logo-remove" class="btn ghost" hidden>Remover logo</button>
+                <p class="source-note">PNG, JPEG ou WebP, até 2 MB. Fica só neste navegador.</p>
+              </div>
+            </div>
+            <div class="fields">
+              <label class="field">
+                <span>Seu nome ou empresa</span>
+                <input id="biz-name" type="text" maxlength="80" autocomplete="organization" />
+              </label>
+              <label class="field">
+                <span>Seu contato</span>
+                <input id="biz-contact" type="text" maxlength="120" autocomplete="tel" />
+              </label>
+              <label class="field">
+                <span>Cliente</span>
+                <input id="customer-name" type="text" maxlength="80" />
+              </label>
+              <label class="field">
+                <span>Contato do cliente</span>
+                <input id="customer-contact" type="text" maxlength="120" />
+              </label>
+              <label class="field">
+                <span>Número do orçamento</span>
+                <input id="quote-number" type="text" maxlength="40" />
+              </label>
+              <label class="field">
+                <span>Data</span>
+                <input id="quote-date" type="date" />
+              </label>
+              <label class="field">
+                <span>Validade (dias)</span>
+                <input id="quote-validity" type="number" min="1" max="365" step="1" value="7" />
+              </label>
+              <label class="field wide">
+                <span>Observações</span>
+                <textarea id="quote-notes" maxlength="800" rows="3"></textarea>
+              </label>
+            </div>
+            <div class="profile-actions profile-io">
+              <button type="button" id="download-pdf" class="btn">Baixar PDF</button>
+            </div>
+            <p id="pdf-message" class="source-note" role="status"></p>
+          </section>
         </div>
 
         <aside class="card results" id="results">
           <h2>Orçamento</h2>
-          <p class="estimate-note">Peso e tempo são estimativas. Ajuste os parâmetros até chegar perto da sua impressora.</p>
+          <p class="estimate-note">Peso e tempo vêm da estimativa, do fatiador ou do valor digitado. Ajuste até ficar perto da sua impressora.</p>
           <div class="hero-metrics">
             <div class="hero-metric">
-              <span class="eyebrow">Peso estimado</span>
+              <span class="eyebrow" id="mass-label">Peso estimado</span>
               <strong id="out-mass">—</strong>
             </div>
             <div class="hero-metric">
-              <span class="eyebrow">Tempo estimado</span>
+              <span class="eyebrow" id="time-label">Tempo estimado</span>
               <strong id="out-time">—</strong>
             </div>
           </div>
+          <p class="usage-source" id="usage-source" hidden></p>
           <p class="material-detail" id="out-material-detail">Envie um STL para ver o orçamento.</p>
           <div class="cost-list">
             <div class="cost-row"><span>Filamento</span><b id="cost-filament">—</b></div>
@@ -209,6 +413,7 @@
               <span id="listing-label">Preço de anúncio (com taxa)</span>
               <b id="price-listing">—</b>
               <small>Você recebe <b id="price-net">—</b> depois da taxa do marketplace</small>
+              <p id="fee-breakdown" class="fee-breakdown" hidden></p>
             </div>
           </div>
         </aside>
@@ -222,6 +427,29 @@
         </p>
       </footer>
     </div>
+    <dialog id="name-dialog">
+      <form method="dialog">
+        <h3 id="name-dialog-title">Nome do perfil</h3>
+        <label class="field">
+          <span>Nome</span>
+          <input id="name-dialog-input" type="text" maxlength="60" required />
+        </label>
+        <div class="dialog-actions">
+          <button value="cancel" class="btn ghost">Cancelar</button>
+          <button value="ok" class="btn">Salvar</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="confirm-dialog">
+      <form method="dialog">
+        <h3>Substituir perfis?</h3>
+        <p id="confirm-text"></p>
+        <div class="dialog-actions">
+          <button value="cancel" class="btn ghost">Cancelar</button>
+          <button value="ok" class="btn">Continuar</button>
+        </div>
+      </form>
+    </dialog>
     <script type="module" src="./src/app.js"></script>
   </body>
 </html>
