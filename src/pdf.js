@@ -28,18 +28,22 @@ export function addDaysIso(iso, days) {
 /**
  * @param {Array<{description?: string, quantity?: number, unitPrice?: number}>} items
  */
+function cents(value) {
+  return Math.round((Number(value) || 0) * 100) / 100;
+}
+
 export function quoteLineItems(items) {
   const lines = (Array.isArray(items) ? items : []).map((item, index) => {
     const quantity = Math.max(1, Math.round(Number(item?.quantity) || 1));
-    const unitPrice = Math.max(0, Number(item?.unitPrice) || 0);
+    const unitPrice = cents(Math.max(0, Number(item?.unitPrice) || 0));
     return {
       description: String(item?.description || `Item ${index + 1}`).slice(0, 180),
       quantity,
       unitPrice,
-      total: quantity * unitPrice,
+      total: cents(quantity * unitPrice),
     };
   });
-  const total = lines.reduce((sum, line) => sum + line.total, 0);
+  const total = cents(lines.reduce((sum, line) => sum + line.total, 0));
   return { lines, total };
 }
 

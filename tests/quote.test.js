@@ -15,6 +15,7 @@ import {
 import {
   DEFAULT_SETTINGS,
   calculateQuote,
+  calculateMultiQuote,
   combineUsageSources,
   estimateMaterialVolume,
   estimatePrintTimeSeconds,
@@ -182,6 +183,30 @@ const mixed = combineUsageSources(
 assert(mixed.massGrams === 8 && mixed.massSource === "manual", "peso manual vence o fatiador");
 assert(mixed.printTimeSeconds === 120 && mixed.timeSource === "slicer", "tempo em branco continua o do fatiador");
 assert(combineUsageSources(null, null) == null, "sem medição não há override");
+
+console.log("\nVárias peças");
+const one = calculateQuote(asciiGeom, DEFAULT_SETTINGS);
+const other = calculateQuote(asciiGeom, { ...DEFAULT_SETTINGS, filamentPricePerKg: 200, densityGCm3: 1.27 });
+const multi = calculateMultiQuote([
+  { name: "Cubo A", quantity: 2, geometry: asciiGeom, settings: DEFAULT_SETTINGS },
+  { name: "Cubo B", quantity: 1, geometry: asciiGeom, settings: { ...DEFAULT_SETTINGS, filamentPricePerKg: 200, densityGCm3: 1.27 } },
+  { name: "Sem medida", quantity: 0, measured: { massGrams: 5, printTimeSeconds: 600 } },
+]);
+assert(multi.lines.length === 3, "três linhas");
+assert(multi.lines[0].quantity === 2 && almostEqual(multi.lines[0].suggestedPrice, one.suggestedPrice * 2), "quantidade multiplica o preço");
+assert(almostEqual(multi.lines[1].unit.massGrams, other.massGrams), "cada peça usa o próprio material");
+assert(multi.lines[2].quantity === 1 && almostEqual(multi.lines[2].massGrams, 5), "quantidade inválida vira 1 e aceita peso manual");
+assert(
+  almostEqual(multi.totals.massGrams, one.massGrams * 2 + other.massGrams + 5),
+  "peso total soma as peças",
+  `obtido ${multi.totals.massGrams}`
+);
+assert(
+  almostEqual(multi.totals.suggestedPrice, one.suggestedPrice * 2 + other.suggestedPrice + multi.lines[2].suggestedPrice),
+  "preço sugerido total soma as linhas"
+);
+assert(almostEqual(multi.totals.costTotal, one.costTotal * 2 + other.costTotal + multi.lines[2].costTotal), "custo total soma as linhas");
+assert(calculateMultiQuote([]).lines.length === 0 && calculateMultiQuote([]).totals.suggestedPrice === 0, "lista vazia tem total zero");
 
 console.log("\nSTL inválido");
 let threw = false;

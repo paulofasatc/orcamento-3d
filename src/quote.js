@@ -180,6 +180,59 @@ export function manualTimeSeconds(hours, minutes) {
  * @param {{massGrams?: unknown, printTimeSeconds?: unknown}|null} manual
  * @param {{massGrams?: unknown, printTimeSeconds?: unknown}|null} slicer
  */
+export function pieceQuantity(value) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.min(9999, n);
+}
+
+/**
+ * Soma várias peças. Cada linha é o orçamento unitário vezes a quantidade.
+ * A preparação entra em cada unidade.
+ * @param {Array<{name?: string, quantity?: number, geometry?: object|null, settings?: object, measured?: object|null}>} parts
+ */
+export function calculateMultiQuote(parts) {
+  const lines = (Array.isArray(parts) ? parts : []).map((part, index) => {
+    const quantity = pieceQuantity(part?.quantity);
+    const unit = calculateQuote(part?.geometry ?? null, part?.settings ?? {}, part?.measured ?? null);
+    const scale = (value) => value * quantity;
+    return {
+      name: String(part?.name || `Peça ${index + 1}`),
+      quantity,
+      unit,
+      massGrams: scale(unit.massGrams),
+      printTimeSeconds: scale(unit.printTimeSeconds),
+      costTotal: scale(unit.costTotal),
+      suggestedPrice: scale(unit.suggestedPrice),
+      listingPrice: scale(unit.listingPrice),
+      costs: {
+        filament: scale(unit.costs.filament),
+        energy: scale(unit.costs.energy),
+        machine: scale(unit.costs.machine),
+        labor: scale(unit.costs.labor),
+        failure: scale(unit.costs.failure),
+      },
+    };
+  });
+  const totals = {
+    massGrams: 0,
+    printTimeSeconds: 0,
+    costTotal: 0,
+    suggestedPrice: 0,
+    listingPrice: 0,
+    costs: { filament: 0, energy: 0, machine: 0, labor: 0, failure: 0 },
+  };
+  for (const line of lines) {
+    totals.massGrams += line.massGrams;
+    totals.printTimeSeconds += line.printTimeSeconds;
+    totals.costTotal += line.costTotal;
+    totals.suggestedPrice += line.suggestedPrice;
+    totals.listingPrice += line.listingPrice;
+    for (const key of Object.keys(totals.costs)) totals.costs[key] += line.costs[key];
+  }
+  return { lines, totals };
+}
+
 export function combineUsageSources(manual, slicer) {
   const measured = {};
   const manualMass = explicitNumber(manual?.massGrams);

@@ -63,6 +63,7 @@
         </div>
         <button type="button" id="reset-settings">Restaurar padrões</button>
       </header>
+      <p class="audience">Calculadora de preço para quem vende impressão 3D no Mercado Livre e na Shopee. O modelo não sai do seu navegador.</p>
 
       <div class="layout">
         <div class="main">
@@ -114,6 +115,13 @@
                   <input id="manual-minutes" type="number" inputmode="decimal" min="0" step="1" placeholder="automático" />
                 </label>
               </div>
+            </div>
+            <div class="parts-panel" id="parts-panel">
+              <div class="manual-head">
+                <h3>Peças do orçamento</h3>
+                <button type="button" id="part-blank" class="btn ghost">Peça sem arquivo</button>
+              </div>
+              <ul id="parts-list" class="parts-list"></ul>
             </div>
             <div id="slice-info" class="slice-info" hidden>
               <p id="slice-summary"></p>
@@ -271,8 +279,26 @@
                       <input id="ml-fixed" name="mlFixedOverride" type="number" inputmode="decimal" min="0" step="0.01" placeholder="só se o simulador mostrar" />
                     </label>
                   </div>
+                  <div class="shipping-box" id="shipping-box">
+                    <label class="check">
+                      <input id="shipping-enabled" type="checkbox" />
+                      Incluir frete do Mercado Envios no preço de anúncio
+                    </label>
+                    <div class="fields">
+                      <label class="field">
+                        <span>Peso do pacote (g)</span>
+                        <input id="shipping-weight" type="number" inputmode="decimal" min="0" step="1" placeholder="usar o peso da peça" />
+                      </label>
+                      <label class="field">
+                        <span>Frete que você paga (R$)</span>
+                        <input id="shipping-override" type="number" inputmode="decimal" min="0" step="0.01" placeholder="vazio usa a regra ou R$ 6,85" />
+                      </label>
+                    </div>
+                    <p id="shipping-note" class="source-note"></p>
+                  </div>
                 </div>
                 <div id="fee-shopee" hidden>
+                  <p class="source-note">O frete da Shopee não entra no preço. A ajuda oficial descreve cupom de frete subsidiado, não uma tabela de custo pago pelo vendedor.</p>
                   <div class="fields">
                     <label class="field">
                       <span>Vendedor</span>
@@ -394,6 +420,7 @@
             </div>
           </div>
           <p class="usage-source" id="usage-source" hidden></p>
+          <ul id="parts-summary" class="parts-summary" hidden></ul>
           <p class="material-detail" id="out-material-detail">Envie um STL para ver o orçamento.</p>
           <div class="cost-list">
             <div class="cost-row"><span>Filamento</span><b id="cost-filament">—</b></div>

@@ -121,6 +121,57 @@ assert(almostEqual(mlOverride.listingPrice, (5 + 6.5) / 0.88), "usa o fixo infor
 assert(mlOverride.listingPrice >= 12.5 && mlOverride.listingPrice < 79, "o preço cai na faixa do fixo");
 assert(mlOverride.warnings.some((w) => /você informou/i.test(w)), "deixa claro que o valor não é o da página oficial");
 
+console.log("\nFrete do Mercado Envios");
+const shipFree = solveListingPrice(30, {
+  marketplaceId: "mercado-livre",
+  listingType: "classico",
+  percent: 12,
+  logistics: "me2",
+  shipping: { enabled: true, weightGrams: 200 },
+}, catalog);
+assert(shipFree.ok && almostEqual(shipFree.listingPrice, 30 / 0.88), "de R$ 19 a R$ 78,99 o ML paga o envio", `obtido ${shipFree.listingPrice}`);
+assert(almostEqual(shipFree.shippingAmount, 0), "frete do vendedor é zero nessa faixa");
+assert(shipFree.shippingConfirmed, "essa regra está na ajuda oficial");
+
+const shipPaid = solveListingPrice(80, {
+  marketplaceId: "mercado-livre",
+  listingType: "classico",
+  percent: 12,
+  logistics: "me2",
+  shipping: { enabled: true, weightGrams: 200, overrideAmount: 6.85 },
+}, catalog);
+assert(almostEqual(shipPaid.listingPrice, (80 + 6.85) / 0.88), "a partir de R$ 79 soma o frete informado", `obtido ${shipPaid.listingPrice}`);
+assert(shipPaid.warnings.some((w) => /informado por você/i.test(w)), "o valor digitado não é tratado como oficial");
+
+const shipExample = solveListingPrice(10, {
+  marketplaceId: "mercado-livre",
+  listingType: "classico",
+  percent: 12,
+  logistics: "me2",
+  shipping: { enabled: true, weightGrams: 200 },
+}, catalog);
+assert(shipExample.ok, "quando a faixa pula, ainda há um preço");
+assert(shipExample.listingPrice >= 19, "não fica abaixo de R$ 19 com o exemplo de R$ 6,85");
+assert(shipExample.warnings.some((w) => /não confirmado|acima do alvo/i.test(w)), "avisa que o número não fecha redondo ou não está confirmado");
+
+const heavy = solveListingPrice(80, {
+  marketplaceId: "mercado-livre",
+  listingType: "classico",
+  percent: 12,
+  logistics: "me2",
+  shipping: { enabled: true, weightGrams: 800 },
+}, catalog);
+assert(!heavy.ok && heavy.needsShipping, "acima de 0,3 kg e de R$ 79 pede o frete, sem inventar a tabela");
+
+const shopeeShip = solveListingPrice(100, {
+  marketplaceId: "shopee",
+  programId: "cnpj",
+  fullPlus: "none",
+  shipping: { enabled: true, weightGrams: 200, overrideAmount: 10 },
+}, catalog);
+assert(shopeeShip.ok && almostEqual(shopeeShip.shippingAmount, 0), "Shopee ignora o frete");
+assert(shopeeShip.warnings.some((w) => /Shopee não entra/i.test(w)), "deixa explícito que o frete da Shopee não entra");
+
 const sources = catalog.marketplaces.map((item) => item.sourceUrl);
 assert(sources.every((url) => url.startsWith("https://")), "cada marketplace tem URL de fonte");
 assert(catalog.consultedAt === "2026-11-11", "data da consulta registrada");

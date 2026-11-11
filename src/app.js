@@ -3,6 +3,7 @@ import {
   MATERIALS,
   DEFAULT_SETTINGS,
   getMaterial,
+  calculateMultiQuote,
   calculateQuote,
   combineUsageSources,
   explicitNumber,
@@ -13,6 +14,7 @@ import {
   PRINTER_FIELDS,
   activeFilament,
   addProfile,
+  createId,
   deleteProfile,
   duplicateProfile,
   loadLibrary,
@@ -37,6 +39,7 @@ import { StlPreview } from "./preview.js";
 
 const MANUAL_KEY = "orca3d:manual";
 const QUOTE_DOC_KEY = "orca3d:quote-doc";
+const SHIPPING_KEY = "orca3d:shipping";
 
 const SETTING_FIELDS = [
   "material",
@@ -100,6 +103,12 @@ const els = {
   mlLogistics: document.getElementById("ml-logistics"),
   mlPercent: document.getElementById("ml-percent"),
   mlFixed: document.getElementById("ml-fixed"),
+  shippingEnabled: document.getElementById("shipping-enabled"),
+  shippingWeight: document.getElementById("shipping-weight"),
+  shippingOverride: document.getElementById("shipping-override"),
+  shippingNote: document.getElementById("shipping-note"),
+  partsList: document.getElementById("parts-list"),
+  partsSummary: document.getElementById("parts-summary"),
   shopeeProgram: document.getElementById("shopee-program"),
   shopeeFull: document.getElementById("shopee-full"),
   printerSelect: document.getElementById("printer-select"),
@@ -137,6 +146,8 @@ let stlLabel = "";
 let sliceRaw = null;
 let sliceLabel = "";
 let partTitle = "";
+let quoteParts = [];
+let selectedPartId = null;
 let logoDataUrl = "";
 let preview = null;
 
@@ -415,25 +426,160 @@ function renderEmpty() {
   setText("out-material-detail", "Envie um STL ou um arquivo fatiado para ver o orçamento.");
 }
 
+function makePart(name) {
+  return {
+    id: createId(),
+    name: name || "Peça",
+    quantity: 1,
+    filamentId: library?.activeFilamentId || "",
+    geometry: null,
+    sliceRaw: null,
+    sliceLabel: "",
+    stlLabel: "",
+    manual: { mass: "", hours: "", minutes: "" },
+  };
+}
+
+function selectedPart() {
+  return quoteParts.find((part) => part.id === selectedPartId) || null;
+}
+
+function syncSelectedFromForm() {
+  const part = selectedPart();
+  if (!part) return;
+  part.manual = {
+    mass: els.manualMass.value,
+    hours: els.manualHours.value,
+    minutes: els.manualMinutes.value,
+  };
+  part.geometry = geometry;
+  part.sliceRaw = sliceRaw;
+  part.sliceLabel = sliceLabel;
+  part.stlLabel = stlLabel;
+  if (partTitle) part.name = partTitle;
+}
+
+function applyPart(part) {
+  geometry = part?.geometry || null;
+  sliceRaw = part?.sliceRaw || null;
+  sliceLabel = part?.sliceLabel || "";
+  stlLabel = part?.stlLabel || "";
+  partTitle = part?.name || "";
+  selectedPartId = part?.id || null;
+  els.manualMass.value = part?.manual?.mass || "";
+  els.manualHours.value = part?.manual?.hours || "";
+  els.manualMinutes.value = part?.manual?.minutes || "";
+  refreshFileLabel();
+  if (geometry?.triangles) {
+    els.previewEmpty.hidden = true;
+    if (!preview) preview = new StlPreview(els.preview);
+    preview.load(geometry.triangles, geometry.boundingBox.size, geometry.boundingBox.min);
+  } else {
+    els.previewEmpty.hidden = false;
+    preview?.clear();
+  }
+}
+
+function rememberPart(partial) {
+  const part = { ...makePart(partial.name), ...partial, id: createId() };
+  quoteParts.push(part);
+  applyPart(part);
+  return part;
+}
+
+function settingsForPart(baseSettings, part) {
+  const filament = library.filaments.find((item) => item.id === part.filamentId) || activeFilament(library);
+  return {
+    ...baseSettings,
+    material: filament.material,
+    densityGCm3: filament.densityGCm3,
+    filamentPricePerKg: filament.filamentPricePerKg,
+  };
+}
+
+function measuredOfPart(part, densityGCm3) {
+  const manual = {
+    massGrams: explicitNumber(part.manual?.mass),
+    printTimeSeconds: manualTimeSeconds(part.manual?.hours, part.manual?.minutes),
+  };
+  if (!part.sliceRaw) return combineUsageSources(manual, null);
+  const resolved = resolveSliceMass(part.sliceRaw, { densityGCm3 });
+  return combineUsageSources(manual, {
+    massGrams: resolved.massGrams,
+    printTimeSeconds: part.sliceRaw.printTimeSeconds,
+  });
+}
+
+function quoteInputs(baseSettings) {
+  syncSelectedFromForm();
+  return quoteParts
+    .map((part) => {
+      const settings = settingsForPart(baseSettings, part);
+      const measured = measuredOfPart(part, settings.densityGCm3);
+      if (!part.geometry && !measured) return null;
+      return {
+        name: part.name,
+        quantity: part.quantity,
+        geometry: part.geometry,
+        settings,
+        measured,
+      };
+    })
+    .filter(Boolean);
+}
+
+function paintParts() {
+  if (!els.partsList) return;
+  els.partsList.innerHTML = quoteParts
+    .map((part) => {
+      const options = library.filaments
+        .map(
+          (filament) =>
+            `<option value="${escapeHtml(filament.id)}"${filament.id === part.filamentId ? " selected" : ""}>${escapeHtml(filament.name)}</option>`
+        )
+        .join("");
+      return `<li class="part-row${part.id === selectedPartId ? " is-selected" : ""}" data-id="${escapeHtml(part.id)}">
+        <button type="button" class="linkish" data-action="select">${escapeHtml(part.name)}</button>
+        <input data-action="qty" type="number" min="1" max="9999" step="1" value="${part.quantity}" aria-label="Quantidade de ${escapeHtml(part.name)}" />
+        <select data-action="filament" aria-label="Filamento de ${escapeHtml(part.name)}">${options}</select>
+        <button type="button" class="btn ghost" data-action="remove">Tirar</button>
+      </li>`;
+    })
+    .join("");
+}
+
 function render() {
   const settings = persistFromForm();
   syncFeePanels();
   const sliceView = currentSliceView();
   renderSliceBanner(sliceView);
-  const measured = combineUsageSources(readManual(), measuredFromSlice(sliceView));
+  const multi = calculateMultiQuote(quoteInputs(settings));
+  paintParts();
 
-  if (!geometry && !measured) {
+  if (!multi.lines.length) {
     renderEmpty();
     paintFeePanel(settings, null);
+    if (els.partsSummary) els.partsSummary.hidden = true;
     return;
   }
 
-  const quoteSettings =
-    settings.feeMode && settings.feeMode !== "custom"
-      ? { ...settings, marketplaceFeePercent: 0 }
-      : settings;
-  const quote = calculateQuote(geometry, quoteSettings, measured);
-  const feeResult = priceWithFeeTable(quote.suggestedPrice, settings);
+  const single = multi.lines.length === 1 ? multi.lines[0] : null;
+  const quote = single
+    ? single.unit
+    : {
+        massGrams: multi.totals.massGrams,
+        printTimeSeconds: multi.totals.printTimeSeconds,
+        costs: multi.totals.costs,
+        costTotal: multi.totals.costTotal,
+        suggestedPrice: multi.totals.suggestedPrice,
+        listingPrice: multi.totals.listingPrice,
+        massSource: "total",
+        timeSource: "total",
+        material: multi.lines[0].unit.material,
+        estimatedMassGrams: multi.lines.reduce((sum, line) => sum + line.unit.estimatedMassGrams * line.quantity, 0),
+        estimatedPrintTimeSeconds: multi.lines.reduce((sum, line) => sum + line.unit.estimatedPrintTimeSeconds * line.quantity, 0),
+      };
+  const feeResult = priceWithFeeTable(quote.suggestedPrice, settings, quote.massGrams);
   const box = geometry?.boundingBox?.size;
 
   document.getElementById("results").classList.remove("is-empty");
@@ -452,12 +598,23 @@ function render() {
     setText("stat-triangles", "—");
   }
 
-  const massLabels = { slicer: "Peso do fatiador", manual: "Peso informado", estimate: "Peso estimado" };
-  const timeLabels = { slicer: "Tempo do fatiador", manual: "Tempo informado", estimate: "Tempo estimado" };
+  const massLabels = { slicer: "Peso do fatiador", manual: "Peso informado", estimate: "Peso estimado", total: "Peso total" };
+  const timeLabels = { slicer: "Tempo do fatiador", manual: "Tempo informado", estimate: "Tempo estimado", total: "Tempo total" };
   setText("mass-label", massLabels[quote.massSource] || "Peso");
   setText("time-label", timeLabels[quote.timeSource] || "Tempo");
   els.usageSource.hidden = false;
-  els.usageSource.textContent = describeUsage(quote, sliceView);
+  els.usageSource.textContent = single
+    ? describeUsage(single.unit, sliceView)
+    : `Total de ${multi.lines.length} peças. O frete, se ligado, entra uma vez no pacote inteiro.`;
+  if (els.partsSummary) {
+    els.partsSummary.hidden = multi.lines.length < 2;
+    els.partsSummary.innerHTML = multi.lines
+      .map(
+        (line) =>
+          `<li>${escapeHtml(line.name)} × ${line.quantity} · ${numberFmt.format(line.massGrams)} g · ${formatTime(line.printTimeSeconds)} · ${moneyFmt.format(line.suggestedPrice)}</li>`
+      )
+      .join("");
+  }
 
   setText("out-mass", `${numberFmt.format(quote.massGrams)} g`);
   setText("out-time", formatTime(quote.printTimeSeconds));
@@ -480,7 +637,9 @@ function render() {
   }
 
   const mat = quote.material;
-  if (!geometry) {
+  if (!single) {
+    setText("out-material-detail", "Os totais somam todas as peças. A prévia 3D mostra a peça selecionada.");
+  } else if (!geometry) {
     setText("out-material-detail", "Sem STL: o orçamento usa o peso e o tempo informados.");
   } else if (quote.massSource === "estimate" && quote.timeSource === "estimate") {
     setText(
@@ -500,7 +659,11 @@ function render() {
   if (feeResult?.ok) {
     setText("listing-label", `Preço de anúncio (${feeResult.marketplaceName})`);
     els.feeBreakdown.hidden = false;
-    els.feeBreakdown.textContent = `Comissão ${moneyFmt.format(feeResult.percentFee)} (${numberFmt.format(feeResult.percent)}%) + fixo ${moneyFmt.format(feeResult.fixedFee)}. ${feeResult.bandLabel}.`;
+    const shipBit =
+      feeResult.shippingAmount > 0 || feeResult.shippingLabel
+        ? ` Frete ${moneyFmt.format(feeResult.shippingAmount || 0)}${feeResult.shippingConfirmed ? "" : " (não confirmado)"}.`
+        : "";
+    els.feeBreakdown.textContent = `Comissão ${moneyFmt.format(feeResult.percentFee)} (${numberFmt.format(feeResult.percent)}%) + fixo ${moneyFmt.format(feeResult.fixedFee)}.${shipBit} ${feeResult.bandLabel}.`;
   } else if (settings.feeMode === "none") {
     setText("listing-label", "Preço de anúncio (sem taxa)");
     els.feeBreakdown.hidden = true;
@@ -524,7 +687,44 @@ function syncFeePanels() {
   els.feeShopee.hidden = mode !== "shopee";
 }
 
-function priceWithFeeTable(target, settings) {
+function readShipping() {
+  const override = explicitNumber(els.shippingOverride.value);
+  const weight = explicitNumber(els.shippingWeight.value);
+  return {
+    enabled: Boolean(els.shippingEnabled.checked),
+    weightGrams: weight,
+    overrideAmount: els.shippingOverride.value.trim() === "" ? null : override,
+  };
+}
+
+function saveShipping() {
+  try {
+    localStorage.setItem(
+      SHIPPING_KEY,
+      JSON.stringify({
+        enabled: els.shippingEnabled.checked,
+        weightGrams: els.shippingWeight.value,
+        overrideAmount: els.shippingOverride.value,
+      })
+    );
+  } catch {
+    // o cálculo segue com o que está na tela
+  }
+}
+
+function loadShipping() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SHIPPING_KEY) || "null");
+    if (!saved) return;
+    els.shippingEnabled.checked = Boolean(saved.enabled);
+    els.shippingWeight.value = saved.weightGrams ?? "";
+    els.shippingOverride.value = saved.overrideAmount ?? "";
+  } catch {
+    // ignora valor antigo
+  }
+}
+
+function priceWithFeeTable(target, settings, massGrams) {
   const selection = selectionFromSettings(settings);
   if (!selection) return null;
   if (!feeCatalog) {
@@ -535,6 +735,12 @@ function priceWithFeeTable(target, settings) {
       warnings: [],
     };
   }
+  const shipping = readShipping();
+  selection.shipping = {
+    enabled: shipping.enabled,
+    weightGrams: shipping.weightGrams == null ? massGrams : shipping.weightGrams,
+    overrideAmount: shipping.overrideAmount,
+  };
   return solveListingPrice(target, selection, feeCatalog);
 }
 
@@ -592,6 +798,7 @@ function paintFeePanel(settings, solved) {
   els.feeBands.innerHTML = bands
     .map((band) => `<li>${escapeHtml(band.label)}${band.confirmed === false ? " — valor não confirmado" : ""}</li>`)
     .join("");
+  paintShippingNote();
   els.feeNotes.hidden = !(market.notes || []).length;
   els.feeNotesList.innerHTML = (market.notes || []).map((note) => `<li>${escapeHtml(note)}</li>`).join("");
   const warnings = [];
@@ -602,6 +809,16 @@ function paintFeePanel(settings, solved) {
   }
   els.feeWarning.hidden = warnings.length === 0;
   els.feeWarning.textContent = warnings.join(" ");
+}
+
+function paintShippingNote() {
+  if (!els.shippingNote) return;
+  const shipping = feeCatalog?.marketplaces?.find((item) => item.id === "mercado-livre")?.shipping;
+  if (!shipping) {
+    els.shippingNote.textContent = "";
+    return;
+  }
+  els.shippingNote.textContent = `${shipping.updatedAtLabel} O R$ 6,85 (até 0,3 kg e abaixo de R$ 49) é um exemplo informado pelo vendedor, não confirmado — edite o campo se o seu extrato for outro. Fonte: ajuda 16467.`;
 }
 
 function describeUsage(quote, sliceView) {
@@ -626,10 +843,18 @@ async function loadSliceFile(file) {
   try {
     const buffer = await file.arrayBuffer();
     const settings = readFormSettings();
-    sliceRaw = parseSliceBuffer(buffer, name, { densityGCm3: settings.densityGCm3 });
-    sliceLabel = `${name} · ${formatFileSize(file.size)}`;
-    if (!partTitle) partTitle = name.replace(/\.(gcode\.3mf|3mf|gcode)$/i, "");
-    refreshFileLabel();
+    const parsed = parseSliceBuffer(buffer, name, { densityGCm3: settings.densityGCm3 });
+    const label = `${name} · ${formatFileSize(file.size)}`;
+    const title = name.replace(/\.(gcode\.3mf|3mf|gcode)$/i, "");
+    const current = selectedPart();
+    if (current && !current.sliceRaw) {
+      current.sliceRaw = parsed;
+      current.sliceLabel = label;
+      if (!current.geometry) current.name = title;
+      applyPart(current);
+    } else {
+      rememberPart({ name: title, sliceRaw: parsed, sliceLabel: label });
+    }
     render();
   } catch (err) {
     showError(err?.message || "Não foi possível ler este arquivo fatiado.");
@@ -646,23 +871,29 @@ async function loadStlFile(file) {
 
   try {
     const buffer = await file.arrayBuffer();
-    geometry = parseStl(buffer, name);
-    stlLabel = `${name} · ${formatFileSize(file.size)} · ${geometry.format === "binary" ? "binário" : "ASCII"}`;
-    partTitle = name.replace(/\.stl$/i, "");
-    refreshFileLabel();
-    els.previewEmpty.hidden = true;
-    if (!preview) {
-      preview = new StlPreview(els.preview);
+    const parsed = parseStl(buffer, name);
+    const label = `${name} · ${formatFileSize(file.size)} · ${parsed.format === "binary" ? "binário" : "ASCII"}`;
+    const title = name.replace(/\.stl$/i, "");
+    const current = selectedPart();
+    if (current && !current.geometry) {
+      current.geometry = parsed;
+      current.stlLabel = label;
+      current.name = title;
+      applyPart(current);
+    } else {
+      rememberPart({ name: title, geometry: parsed, stlLabel: label });
     }
-    preview.load(geometry.triangles, geometry.boundingBox.size, geometry.boundingBox.min);
     render();
   } catch (err) {
-    geometry = null;
-    stlLabel = "";
-    partTitle = "";
-    refreshFileLabel();
-    els.previewEmpty.hidden = false;
-    preview?.clear();
+    if (selectedPart()) applyPart(selectedPart());
+    else {
+      geometry = null;
+      stlLabel = "";
+      partTitle = "";
+      refreshFileLabel();
+      els.previewEmpty.hidden = false;
+      preview?.clear();
+    }
     render();
     showError(err?.message || "Não foi possível ler este STL.");
   }
@@ -766,12 +997,27 @@ async function init() {
   els.sliceClear.addEventListener("click", () => {
     sliceRaw = null;
     sliceLabel = "";
+    const part = selectedPart();
+    if (part) {
+      part.sliceRaw = null;
+      part.sliceLabel = "";
+    }
     refreshFileLabel();
     render();
   });
 
   loadManual();
   const onManual = () => {
+    if (!selectedPart()) {
+      rememberPart({
+        name: "Peça sem arquivo",
+        manual: {
+          mass: els.manualMass.value,
+          hours: els.manualHours.value,
+          minutes: els.manualMinutes.value,
+        },
+      });
+    }
     saveManual();
     render();
   };
@@ -786,6 +1032,59 @@ async function init() {
     render();
   });
 
+  document.getElementById("part-blank").addEventListener("click", () => {
+    rememberPart({ name: `Peça ${quoteParts.length + 1}` });
+    render();
+  });
+  els.partsList.addEventListener("click", (event) => {
+    const row = event.target.closest(".part-row");
+    if (!row) return;
+    const action = event.target.dataset.action;
+    if (action === "select") {
+      syncSelectedFromForm();
+      applyPart(quoteParts.find((part) => part.id === row.dataset.id) || null);
+      render();
+    }
+    if (action === "remove") {
+      quoteParts = quoteParts.filter((part) => part.id !== row.dataset.id);
+      if (!quoteParts.some((part) => part.id === selectedPartId)) applyPart(quoteParts[0] || null);
+      if (!quoteParts.length) {
+        geometry = null;
+        sliceRaw = null;
+        sliceLabel = "";
+        stlLabel = "";
+        partTitle = "";
+        els.manualMass.value = "";
+        els.manualHours.value = "";
+        els.manualMinutes.value = "";
+        refreshFileLabel();
+        els.previewEmpty.hidden = false;
+        preview?.clear();
+      }
+      render();
+    }
+  });
+  els.partsList.addEventListener("change", (event) => {
+    const row = event.target.closest(".part-row");
+    const part = quoteParts.find((item) => item.id === row?.dataset.id);
+    if (!part) return;
+    if (event.target.dataset.action === "qty") {
+      part.quantity = Math.max(1, Math.round(Number(event.target.value) || 1));
+    }
+    if (event.target.dataset.action === "filament") part.filamentId = event.target.value;
+    render();
+  });
+  loadShipping();
+  for (const field of [els.shippingEnabled, els.shippingWeight, els.shippingOverride]) {
+    field.addEventListener("input", () => {
+      saveShipping();
+      render();
+    });
+    field.addEventListener("change", () => {
+      saveShipping();
+      render();
+    });
+  }
   initDropzone();
   bindProfiles();
   bindQuoteDocument();
@@ -894,11 +1193,16 @@ function fileToLogo(file) {
 
 function currentQuoteSnapshot() {
   const settings = persistFromForm();
-  const measured = combineUsageSources(readManual(), measuredFromSlice(currentSliceView()));
-  if (!geometry && !measured) return null;
-  const quoteSettings =
-    settings.feeMode && settings.feeMode !== "custom" ? { ...settings, marketplaceFeePercent: 0 } : settings;
-  return calculateQuote(geometry, quoteSettings, measured);
+  const multi = calculateMultiQuote(quoteInputs(settings));
+  if (!multi.lines.length) return null;
+  return {
+    suggestedPrice: multi.totals.suggestedPrice,
+    items: multi.lines.map((line) => ({
+      description: line.name,
+      quantity: line.quantity,
+      unitPrice: line.unit.suggestedPrice,
+    })),
+  };
 }
 
 function itemDescription() {
@@ -954,7 +1258,7 @@ function bindQuoteDocument() {
       const doc = buildQuoteDocument(JsPDF, {
         ...details,
         logoDataUrl,
-        items: [{ description: itemDescription(), quantity: 1, unitPrice: quote.suggestedPrice }],
+        items: quote.items,
       });
       const fileName = `${(details.quoteNumber || "orcamento").replace(/[^\w.-]+/g, "-")}.pdf`;
       doc.save(fileName);
