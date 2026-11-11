@@ -129,6 +129,13 @@ p {
   border-color: var(--ink);
 }
 
+.audience {
+  margin: -8px 0 22px;
+  max-width: 68ch;
+  color: var(--ink-soft);
+  font-size: 1rem;
+}
+
 .layout {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.85fr);
