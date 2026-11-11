@@ -42,6 +42,9 @@ const quoted = quoteLineItems([
 assert(quoted.lines[0].total === 31, "quantidade vezes preço");
 assert(quoted.lines[1].quantity === 1, "quantidade vazia vira 1");
 assert(quoted.total === 41, "total do PDF soma as linhas");
+const rounded = quoteLineItems([{ description: "Fração", quantity: 3, unitPrice: 10 / 3 }]);
+assert(rounded.lines[0].unitPrice === 3.33 && rounded.lines[0].total === 9.99, "unitário e total fecham em centavos");
+assert(rounded.total === 9.99, "total geral usa as linhas já arredondadas");
 
 const doc = buildQuoteDocument(jsPDF, {
   businessName: "Oficina do Paulo",
