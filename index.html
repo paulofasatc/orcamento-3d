@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Calcule material, tempo e preço de venda de peças impressas em 3D. Arquivo STL processado no seu navegador."
+    />
+    <title>Orça3D — Orçamento de impressão 3D</title>
+    <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./css/styles.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./vendor/three.module.js",
+          "three/addons/controls/OrbitControls.js": "./vendor/OrbitControls.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div class="page">
+      <header class="header">
+        <div class="brand">
+          <div class="logo" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M12 3 4.5 7.5v9L12 21l7.5-4.5v-9L12 3Z" />
+              <path d="M12 12 4.5 7.5M12 12v9M12 12l7.5-4.5" />
+            </svg>
+          </div>
+          <div>
+            <h1>Orça3D</h1>
+            <p>Orçamento rápido para impressão 3D · filamento, tempo e preço de venda</p>
+          </div>
+        </div>
+        <button type="button" id="reset-settings">Restaurar padrões</button>
+      </header>
+
+      <div class="layout">
+        <div class="main">
+          <section class="card preview-card">
+            <div
+              id="dropzone"
+              role="button"
+              tabindex="0"
+              aria-label="Enviar arquivo STL"
+            >
+              <div class="preview-stage">
+                <div id="preview"></div>
+                <div id="preview-empty">
+                  <div class="hint">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#e8a87c" stroke-width="1.6" aria-hidden="true">
+                      <path d="M12 3 4.5 7.5v9L12 21l7.5-4.5v-9L12 3Z" />
+                      <path d="M12 12 4.5 7.5M12 12v9M12 12l7.5-4.5" />
+                    </svg>
+                    <strong>Envie um arquivo STL</strong>
+                    <span>Arraste o modelo para cá ou clique para escolher. O arquivo fica só no seu navegador — nada é enviado a um servidor.</span>
+                  </div>
+                </div>
+              </div>
+              <div class="file-bar">
+                <span id="file-name">Nenhum arquivo selecionado</span>
+                <label class="btn">
+                  Escolher STL
+                  <input id="file-input" type="file" accept=".stl,model/stl" hidden />
+                </label>
+              </div>
+            </div>
+            <p id="error" hidden></p>
+            <div class="stats">
+              <div class="stat">
+                <span class="label">Volume</span>
+                <strong id="stat-volume">—</strong>
+              </div>
+              <div class="stat">
+                <span class="label">Dimensões</span>
+                <strong id="stat-size">—</strong>
+              </div>
+              <div class="stat">
+                <span class="label">Área</span>
+                <strong id="stat-area">—</strong>
+              </div>
+              <div class="stat">
+                <span class="label">Triângulos</span>
+                <strong id="stat-triangles">—</strong>
+              </div>
+            </div>
+          </section>
+
+          <section class="card settings">
+            <h2>Parâmetros de impressão e custo</h2>
+            <form id="settings-form" autocomplete="off">
+              <div class="fields">
+                <label class="field">
+                  <span>Material</span>
+                  <select id="material" name="material"></select>
+                </label>
+                <label class="field">
+                  <span>Densidade (g/cm³)</span>
+                  <input id="densityGCm3" name="densityGCm3" type="number" inputmode="decimal" min="0.1" max="8" step="0.01" required />
+                </label>
+                <label class="field">
+                  <span>Preenchimento (%)</span>
+                  <input name="infillPercent" type="number" inputmode="decimal" min="0" max="100" step="1" required />
+                </label>
+                <label class="field">
+                  <span>Paredes (perímetros)</span>
+                  <input name="perimeters" type="number" inputmode="numeric" min="0" max="20" step="1" required />
+                </label>
+                <label class="field">
+                  <span>Altura da camada (mm)</span>
+                  <input name="layerHeightMm" type="number" inputmode="decimal" min="0.05" max="1.2" step="0.01" required />
+                </label>
+                <label class="field">
+                  <span>Preço do filamento (R$/kg)</span>
+                  <input name="filamentPricePerKg" type="number" inputmode="decimal" min="0" step="0.01" required />
+                </label>
+                <label class="field">
+                  <span>Potência da impressora (W)</span>
+                  <input name="printerPowerW" type="number" inputmode="decimal" min="0" step="1" required />
+                </label>
+                <label class="field">
+                  <span>Preço da energia (R$/kWh)</span>
+                  <input name="energyPricePerKwh" type="number" inputmode="decimal" min="0" step="0.01" required />
+                </label>
+                <label class="field">
+                  <span>Depreciação da máquina (R$/h)</span>
+                  <input name="machineDepreciationPerHour" type="number" inputmode="decimal" min="0" step="0.01" required />
+                </label>
+                <label class="field">
+                  <span>Mão de obra / preparação (R$)</span>
+                  <input name="laborSetupFee" type="number" inputmode="decimal" min="0" step="0.01" required />
+                </label>
+                <label class="field">
+                  <span>Margem de falha (%)</span>
+                  <input name="failureMarginPercent" type="number" inputmode="decimal" min="0" max="100" step="0.5" required />
+                </label>
+                <label class="field">
+                  <span>Margem de lucro (%)</span>
+                  <input name="profitMarginPercent" type="number" inputmode="decimal" min="0" step="1" required />
+                </label>
+                <label class="field wide">
+                  <span>Taxa do marketplace (%) — Mercado Livre, Shopee etc.</span>
+                  <input name="marketplaceFeePercent" type="number" inputmode="decimal" min="0" max="99" step="0.1" required />
+                </label>
+              </div>
+
+              <button type="button" id="advanced-toggle" aria-expanded="false">Ajustes avançados</button>
+              <div id="advanced" hidden>
+                <div class="fields">
+                  <label class="field">
+                    <span>Largura da linha (mm)</span>
+                    <input name="lineWidthMm" type="number" inputmode="decimal" min="0.1" max="1.2" step="0.05" required />
+                  </label>
+                  <label class="field">
+                    <span>Vazão volumétrica (mm³/s)</span>
+                    <input name="throughputMm3PerS" type="number" inputmode="decimal" min="0.1" step="0.1" required />
+                  </label>
+                  <label class="field">
+                    <span>Altura de referência da vazão (mm)</span>
+                    <input name="referenceLayerHeightMm" type="number" inputmode="decimal" min="0.05" step="0.01" required />
+                  </label>
+                  <label class="field">
+                    <span>Tempo adicional de preparação (min)</span>
+                    <input name="setupTimeMin" type="number" inputmode="decimal" min="0" step="1" required />
+                  </label>
+                </div>
+              </div>
+            </form>
+          </section>
+        </div>
+
+        <aside class="card results" id="results">
+          <h2>Orçamento</h2>
+          <p class="estimate-note">Peso e tempo são estimativas. Ajuste os parâmetros até chegar perto da sua impressora.</p>
+          <div class="hero-metrics">
+            <div class="hero-metric">
+              <span class="eyebrow">Peso estimado</span>
+              <strong id="out-mass">—</strong>
+            </div>
+            <div class="hero-metric">
+              <span class="eyebrow">Tempo estimado</span>
+              <strong id="out-time">—</strong>
+            </div>
+          </div>
+          <p class="material-detail" id="out-material-detail">Envie um STL para ver o orçamento.</p>
+          <div class="cost-list">
+            <div class="cost-row"><span>Filamento</span><b id="cost-filament">—</b></div>
+            <div class="cost-row"><span>Energia</span><b id="cost-energy">—</b></div>
+            <div class="cost-row"><span>Máquina (depreciação)</span><b id="cost-machine">—</b></div>
+            <div class="cost-row"><span>Mão de obra / preparação</span><b id="cost-labor">—</b></div>
+            <div class="cost-row"><span>Reserva para falhas</span><b id="cost-failure">—</b></div>
+            <div class="total-row"><span>Custo total</span><b id="cost-total">—</b></div>
+          </div>
+          <div class="prices">
+            <div class="price">
+              <span>Preço sugerido</span>
+              <b id="price-suggested">—</b>
+              <small>Custo total + margem de lucro</small>
+            </div>
+            <div class="price listing">
+              <span id="listing-label">Preço de anúncio (com taxa)</span>
+              <b id="price-listing">—</b>
+              <small>Você recebe <b id="price-net">—</b> depois da taxa do marketplace</small>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <footer class="footer">
+        <p>
+          <strong>Orça3D</strong> roda inteiro no navegador. O volume vem do método dos tetraedros com sinal;
+          o consumo de material usa uma aproximação de casca + preenchimento. Não substitui o fatiador
+          (Cura, PrusaSlicer, Orca) para tempo e peso finais.
+        </p>
+      </footer>
+    </div>
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>
