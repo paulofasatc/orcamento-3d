@@ -8,9 +8,25 @@ import {
   explicitNumber,
   manualTimeSeconds,
 } from "./quote.js";
+import {
+  JOB_FIELDS,
+  PRINTER_FIELDS,
+  activeFilament,
+  addProfile,
+  deleteProfile,
+  duplicateProfile,
+  loadLibrary,
+  parseProfilesImport,
+  renameProfile,
+  resetActiveProfiles,
+  saveLibrary,
+  serializeProfiles,
+  setActive,
+  settingsFromLibrary,
+  updateProfile,
+} from "./profiles.js";
 import { parseSliceBuffer, resolveSliceMass } from "./slice.js";
 import {
-  FEE_DEFAULTS,
   bandsForSelection,
   getMarketplace,
   selectionFromSettings,
@@ -18,7 +34,6 @@ import {
 } from "./fees.js";
 import { StlPreview } from "./preview.js";
 
-const STORAGE_KEY = "orca3d:settings";
 const MANUAL_KEY = "orca3d:manual";
 
 const SETTING_FIELDS = [
@@ -85,10 +100,21 @@ const els = {
   mlFixed: document.getElementById("ml-fixed"),
   shopeeProgram: document.getElementById("shopee-program"),
   shopeeFull: document.getElementById("shopee-full"),
+  printerSelect: document.getElementById("printer-select"),
+  filamentSelect: document.getElementById("filament-select"),
+  filamentName: document.getElementById("filament-name"),
+  profilesMessage: document.getElementById("profiles-message"),
+  nameDialog: document.getElementById("name-dialog"),
+  nameTitle: document.getElementById("name-dialog-title"),
+  nameInput: document.getElementById("name-dialog-input"),
+  confirmDialog: document.getElementById("confirm-dialog"),
+  confirmText: document.getElementById("confirm-text"),
+  profilesImport: document.getElementById("profiles-import"),
   advancedToggle: document.getElementById("advanced-toggle"),
   advanced: document.getElementById("advanced"),
 };
 
+let library = null;
 let feeCatalog = null;
 let feeCatalogError = "";
 let geometry = null;
@@ -97,23 +123,83 @@ let sliceRaw = null;
 let sliceLabel = "";
 let preview = null;
 
-function loadSettings() {
+function persistFromForm() {
+  const settings = readFormSettings();
+  if (!library) return settings;
+  const filamentName = (els.filamentName.value || "").trim() || "Filamento";
+  const printerPatch = {};
+  for (const key of PRINTER_FIELDS) printerPatch[key] = settings[key];
+  library = updateProfile(library, "printers", library.activePrinterId, printerPatch);
+  library = updateProfile(library, "filaments", library.activeFilamentId, {
+    name: filamentName,
+    material: settings.material,
+    densityGCm3: settings.densityGCm3,
+    filamentPricePerKg: settings.filamentPricePerKg,
+  });
+  const job = {};
+  for (const key of JOB_FIELDS) job[key] = settings[key];
+  library = { ...library, job };
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { ...DEFAULT_SETTINGS, ...FEE_DEFAULTS };
-    const saved = JSON.parse(raw);
-    return { ...DEFAULT_SETTINGS, ...FEE_DEFAULTS, ...saved };
+    saveLibrary(localStorage, library);
   } catch {
-    return { ...DEFAULT_SETTINGS, ...FEE_DEFAULTS };
+    setProfileMessage("Não foi possível salvar os perfis neste navegador.", true);
   }
+  const option = els.filamentSelect.querySelector(`option[value="${CSS.escape(library.activeFilamentId)}"]`);
+  if (option) option.textContent = filamentName;
+  return settingsFromLibrary(library);
 }
 
-function saveSettings(settings) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-  } catch {
-    // storage cheio ou bloqueado — a ferramenta continua funcionando
-  }
+function applyLibraryToForm() {
+  const settings = settingsFromLibrary(library);
+  populateMaterials(settings.material);
+  fillForm(settings);
+  els.filamentName.value = activeFilament(library).name;
+  refreshProfileSelects();
+}
+
+function refreshProfileSelects() {
+  els.printerSelect.innerHTML = library.printers
+    .map(
+      (item) =>
+        `<option value="${escapeHtml(item.id)}"${item.id === library.activePrinterId ? " selected" : ""}>${escapeHtml(item.name)}</option>`
+    )
+    .join("");
+  els.filamentSelect.innerHTML = library.filaments
+    .map(
+      (item) =>
+        `<option value="${escapeHtml(item.id)}"${item.id === library.activeFilamentId ? " selected" : ""}>${escapeHtml(item.name)}</option>`
+    )
+    .join("");
+}
+
+function setProfileMessage(text, isError = false) {
+  els.profilesMessage.textContent = text || "";
+  els.profilesMessage.classList.toggle("is-error", Boolean(isError) && Boolean(text));
+}
+
+function askName(title, initial) {
+  els.nameTitle.textContent = title;
+  els.nameInput.value = initial || "";
+  return new Promise((resolve) => {
+    const onClose = () => {
+      els.nameDialog.removeEventListener("close", onClose);
+      resolve(els.nameDialog.returnValue === "ok" ? els.nameInput.value.trim() : "");
+    };
+    els.nameDialog.addEventListener("close", onClose);
+    els.nameDialog.showModal();
+  });
+}
+
+function askConfirm(text) {
+  els.confirmText.textContent = text;
+  return new Promise((resolve) => {
+    const onClose = () => {
+      els.confirmDialog.removeEventListener("close", onClose);
+      resolve(els.confirmDialog.returnValue === "ok");
+    };
+    els.confirmDialog.addEventListener("close", onClose);
+    els.confirmDialog.showModal();
+  });
 }
 
 function readFormSettings() {
@@ -313,8 +399,7 @@ function renderEmpty() {
 }
 
 function render() {
-  const settings = readFormSettings();
-  saveSettings(settings);
+  const settings = persistFromForm();
   syncFeePanels();
   const sliceView = currentSliceView();
   renderSliceBanner(sliceView);
@@ -632,9 +717,8 @@ async function loadFeeCatalog() {
 }
 
 async function init() {
-  const settings = loadSettings();
-  populateMaterials(settings.material);
-  fillForm(settings);
+  library = loadLibrary(localStorage);
+  applyLibraryToForm();
 
   els.material.addEventListener("change", () => {
     const mat = getMaterial(els.material.value);
@@ -646,11 +730,9 @@ async function init() {
   els.form.addEventListener("change", () => render());
 
   els.reset.addEventListener("click", () => {
-    const defaults = { ...DEFAULT_SETTINGS, ...FEE_DEFAULTS };
-    fillForm(defaults);
-    populateMaterials(DEFAULT_SETTINGS.material);
-    els.density.value = String(DEFAULT_SETTINGS.densityGCm3);
-    saveSettings(defaults);
+    library = resetActiveProfiles(library);
+    applyLibraryToForm();
+    setProfileMessage("Os perfis ativos voltaram aos valores padrão.", false);
     render();
   });
 
@@ -685,8 +767,115 @@ async function init() {
   });
 
   initDropzone();
+  bindProfiles();
   await loadFeeCatalog();
   render();
+}
+
+function bindProfiles() {
+  const switchProfile = (kind, select) => {
+    persistFromForm();
+    library = setActive(library, kind, select.value);
+    applyLibraryToForm();
+    setProfileMessage("", false);
+    render();
+  };
+  els.printerSelect.addEventListener("change", () => switchProfile("printers", els.printerSelect));
+  els.filamentSelect.addEventListener("change", () => switchProfile("filaments", els.filamentSelect));
+
+  document.getElementById("printer-new").addEventListener("click", () => createProfile("printers", "Nova impressora"));
+  document.getElementById("filament-new").addEventListener("click", () => createProfile("filaments", "Novo filamento"));
+  document.getElementById("printer-duplicate").addEventListener("click", () => copyProfile("printers"));
+  document.getElementById("filament-duplicate").addEventListener("click", () => copyProfile("filaments"));
+  document.getElementById("printer-rename").addEventListener("click", () => renameActive("printers", "Nome da impressora"));
+  document.getElementById("filament-rename").addEventListener("click", () => renameActive("filaments", "Nome do filamento"));
+  document.getElementById("printer-delete").addEventListener("click", () => removeProfile("printers"));
+  document.getElementById("filament-delete").addEventListener("click", () => removeProfile("filaments"));
+  document.getElementById("profiles-export").addEventListener("click", exportProfiles);
+  els.profilesImport.addEventListener("change", () => {
+    const file = els.profilesImport.files?.[0];
+    els.profilesImport.value = "";
+    if (file) importProfiles(file);
+  });
+}
+
+function createProfile(kind, name) {
+  persistFromForm();
+  library = addProfile(library, kind, { name });
+  applyLibraryToForm();
+  setProfileMessage(kind === "printers" ? "Impressora criada." : "Filamento criado.", false);
+  render();
+}
+
+function copyProfile(kind) {
+  persistFromForm();
+  const id = kind === "printers" ? library.activePrinterId : library.activeFilamentId;
+  library = duplicateProfile(library, kind, id);
+  applyLibraryToForm();
+  setProfileMessage("Perfil duplicado.", false);
+  render();
+}
+
+async function renameActive(kind, title) {
+  const id = kind === "printers" ? library.activePrinterId : library.activeFilamentId;
+  const current = library[kind].find((item) => item.id === id);
+  const name = await askName(title, current?.name || "");
+  if (!name) return;
+  try {
+    library = renameProfile(library, kind, id, name);
+  } catch (err) {
+    setProfileMessage(err.message, true);
+    return;
+  }
+  if (kind === "filaments") els.filamentName.value = name;
+  applyLibraryToForm();
+  setProfileMessage("Nome atualizado.", false);
+  render();
+}
+
+function removeProfile(kind) {
+  const id = kind === "printers" ? library.activePrinterId : library.activeFilamentId;
+  try {
+    library = deleteProfile(library, kind, id);
+  } catch (err) {
+    setProfileMessage(err.message, true);
+    return;
+  }
+  applyLibraryToForm();
+  setProfileMessage("Perfil excluído.", false);
+  render();
+}
+
+function exportProfiles() {
+  persistFromForm();
+  const blob = new Blob([serializeProfiles(library)], { type: "application/json" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = "orca3d-perfis.json";
+  link.click();
+  URL.revokeObjectURL(link.href);
+  setProfileMessage("Arquivo de perfis gerado.", false);
+}
+
+async function importProfiles(file) {
+  try {
+    const text = await file.text();
+    if (text.length > 1_000_000) {
+      setProfileMessage("O arquivo é grande demais (máximo de 1 MB).", true);
+      return;
+    }
+    const next = parseProfilesImport(text);
+    const ok = await askConfirm(
+      "Isso substitui as impressoras, os filamentos e os ajustes salvos neste navegador. Os arquivos STL deste orçamento não são alterados."
+    );
+    if (!ok) return;
+    library = next;
+    applyLibraryToForm();
+    setProfileMessage(`Perfis importados: ${next.printers.length} impressora(s) e ${next.filaments.length} filamento(s).`, false);
+    render();
+  } catch (err) {
+    setProfileMessage(err?.message || "Não foi possível importar os perfis.", true);
+  }
 }
 
 init();

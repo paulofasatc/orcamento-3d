@@ -122,8 +122,42 @@
 
           <section class="card settings">
             <h2>Parâmetros de impressão e custo</h2>
+            <div class="profiles">
+              <div class="profile-line">
+                <span>Impressora</span>
+                <select id="printer-select" aria-label="Impressora ativa"></select>
+                <div class="profile-actions">
+                  <button type="button" id="printer-new" class="btn ghost">Nova</button>
+                  <button type="button" id="printer-rename" class="btn ghost">Renomear</button>
+                  <button type="button" id="printer-duplicate" class="btn ghost">Duplicar</button>
+                  <button type="button" id="printer-delete" class="btn ghost">Excluir</button>
+                </div>
+              </div>
+              <div class="profile-line">
+                <span>Filamento</span>
+                <select id="filament-select" aria-label="Filamento ativo"></select>
+                <div class="profile-actions">
+                  <button type="button" id="filament-new" class="btn ghost">Novo</button>
+                  <button type="button" id="filament-rename" class="btn ghost">Renomear</button>
+                  <button type="button" id="filament-duplicate" class="btn ghost">Duplicar</button>
+                  <button type="button" id="filament-delete" class="btn ghost">Excluir</button>
+                </div>
+              </div>
+              <div class="profile-actions profile-io">
+                <button type="button" id="profiles-export" class="btn">Exportar perfis</button>
+                <label class="btn ghost">
+                  Importar perfis
+                  <input id="profiles-import" type="file" accept="application/json,.json" hidden />
+                </label>
+              </div>
+              <p id="profiles-message" class="source-note" role="status"></p>
+            </div>
             <form id="settings-form" autocomplete="off">
               <div class="fields">
+                <label class="field wide">
+                  <span>Nome do filamento (marca / cor)</span>
+                  <input id="filament-name" type="text" maxlength="60" autocomplete="off" />
+                </label>
                 <label class="field">
                   <span>Material</span>
                   <select id="material" name="material"></select>
@@ -318,6 +352,29 @@
         </p>
       </footer>
     </div>
+    <dialog id="name-dialog">
+      <form method="dialog">
+        <h3 id="name-dialog-title">Nome do perfil</h3>
+        <label class="field">
+          <span>Nome</span>
+          <input id="name-dialog-input" type="text" maxlength="60" required />
+        </label>
+        <div class="dialog-actions">
+          <button value="cancel" class="btn ghost">Cancelar</button>
+          <button value="ok" class="btn">Salvar</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="confirm-dialog">
+      <form method="dialog">
+        <h3>Substituir perfis?</h3>
+        <p id="confirm-text"></p>
+        <div class="dialog-actions">
+          <button value="cancel" class="btn ghost">Cancelar</button>
+          <button value="ok" class="btn">Continuar</button>
+        </div>
+      </form>
+    </dialog>
     <script type="module" src="./src/app.js"></script>
   </body>
 </html>
